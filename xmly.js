@@ -10,9 +10,41 @@
 // @license         MIT
 // ==/UserScript==
 
-// increase this value if load slow, otherwise it will use last page data 
-const NEXT_PAGE_LOAD_TIME = 3000;
 const EACH_DOWNLOAD_DELAY = 500;
+
+function extractTrackUrl(tracks) {
+  let timestamp = Date.now();
+  return Array.from(tracks).map((t, index) => {
+    timestamp += 5 * 60 * 1000 * index;
+    const trackID = t.trackId;
+    const title = t.title;
+    const url = `https://www.ximalaya.com/mobile-playpage/track/v3/baseInfo/${timestamp}?device=web&trackId=${trackID}`;
+    return { title, url };
+  });
+}
+
+async function getAllTracks() {
+  function getTotalTrackNumber() {
+    const element = document.querySelector(".title.active .s_O");
+    const textContent = element.textContent;
+    const numberMatch = textContent.match(/\d+/);
+    const number = numberMatch ? parseInt(numberMatch[0], 10) : null;
+    return number;
+  }
+
+  function getAlbumId() {
+    var currentURL = window.location.href;
+    var match = currentURL.match(/album\/(\d+)/);
+    var albumId = match ? match[1] : null;
+    return albumId;
+  }
+
+  const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${getAlbumId()}&pageNum=1&pageSize=${getTotalTrackNumber()}`;
+  const response = await fetch(apiUrl);
+  const resJson = await response.json();
+  const tracks = resJson.data.tracks;
+  return extractTrackUrl(tracks);
+}
 
 function decrypt(t) {
   return CryptoJS.AES.decrypt(
@@ -31,39 +63,6 @@ async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getAllTracks() {
-  const tracks = [];
-  const NEXT_BUTTON_SELECTOR = ".page-next.N_t a";
-  const TRACK_LINK_SELECTOR = ".text a";
-
-
-  function extractTracks() {
-    let timestamp = Date.now();
-    return Array.from(document.querySelectorAll(TRACK_LINK_SELECTOR)).map(
-      (a, index) => {
-        timestamp += 5 * 60 * 1000 * index;
-        const trackID = a.href.split("/").pop();
-        const url = `https://www.ximalaya.com/mobile-playpage/track/v3/baseInfo/${timestamp}?device=web&trackId=${trackID}`;
-        const title = a.querySelector(".title").textContent;
-        return { title, url };
-      }
-    );
-  }
-
-  let nextButton = document.querySelector(NEXT_BUTTON_SELECTOR);
-
-  while (nextButton) {
-    tracks.push(...extractTracks());
-    nextButton.click();
-    await sleep(NEXT_PAGE_LOAD_TIME);
-    nextButton = document.querySelector(NEXT_BUTTON_SELECTOR);
-  }
-
-  tracks.push(...extractTracks());
-
-  return tracks;
-}
-
 async function fetchUrl(apiUrl) {
   try {
     const response = await fetch(apiUrl);
@@ -75,7 +74,7 @@ async function fetchUrl(apiUrl) {
   }
 }
 
-async function downloadFromApi(url, title) {
+async function downloadFromApi(title, url) {
   try {
     const fetchedUrl = await fetchUrl(url);
     const trueUrl = decrypt(fetchedUrl);
@@ -105,9 +104,11 @@ button.addEventListener("click", async function () {
   console.log(`Start download! Total ${tracks.length} tracks.`);
   for (const t of tracks) {
     try {
-      await downloadFromApi(t.url, t.title);
+      await downloadFromApi(t.title, t.url);
       downloadedCount++;
-      console.log(`Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`);
+      console.log(
+        `Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`
+      );
       await sleep(EACH_DOWNLOAD_DELAY);
     } catch (error) {
       console.error(`Failed to download ${t.title}:`, error);
