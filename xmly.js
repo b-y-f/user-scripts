@@ -9,6 +9,7 @@
 // @require         https://registry.npmmirror.com/crypto-js/4.1.1/files/crypto-js.js
 // @license         MIT
 // ==/UserScript==
+const DELAY_TIME = 1000;
 
 function decrypt(t) {
   return CryptoJS.AES.decrypt(
@@ -23,49 +24,42 @@ function decrypt(t) {
   ).toString(CryptoJS.enc.Utf8);
 }
 
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getAllTracks() {
-  let tracks = [];
-  let nextButton = document.querySelector(".page-next.N_t a");
+  const tracks = [];
+  const NEXT_BUTTON_SELECTOR = ".page-next.N_t a";
+  const TRACK_LINK_SELECTOR = ".text a";
 
-  // console.log('nextButton',nextButton);
-  
 
-  const extractTracks = () => {
-    let timestamp = Date.parse(new Date());
-    return Array.from(document.querySelectorAll(".text a")).map((a, index) => {
-      timestamp += 5 * 60 * 1000 * index;
-      let trackID = a.href.split("/").pop();
-      const url = `https://www.ximalaya.com/mobile-playpage/track/v3/baseInfo/${timestamp}?device=web&trackId=${trackID}`;
-      let title = a.querySelector(".title").textContent;
-      return { title: title, url };
-    });
-  };
-
-  while (nextButton) {
-    // console.log("while loop");
-    
-    // Get all the track names and IDs on the current page
-    tracks = tracks.concat(extractTracks());
-
-    // Click the next button
-    nextButton.click();
-
-    // Wait for the next page to load
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Update the next button
-    nextButton = document.querySelector(".page-next a");
+  function extractTracks() {
+    let timestamp = Date.now();
+    return Array.from(document.querySelectorAll(TRACK_LINK_SELECTOR)).map(
+      (a, index) => {
+        timestamp += 5 * 60 * 1000 * index;
+        const trackID = a.href.split("/").pop();
+        const url = `https://www.ximalaya.com/mobile-playpage/track/v3/baseInfo/${timestamp}?device=web&trackId=${trackID}`;
+        const title = a.querySelector(".title").textContent;
+        return { title, url };
+      }
+    );
   }
 
-  // Fetch the tracks on the last page
-  tracks = tracks.concat(extractTracks());
+  let nextButton = document.querySelector(NEXT_BUTTON_SELECTOR);
 
-  // console.log("tracks", tracks);
-  
+  while (nextButton) {
+    tracks.push(...extractTracks());
+    nextButton.click();
+    await sleep(DELAY_TIME);
+    nextButton = document.querySelector(NEXT_BUTTON_SELECTOR);
+  }
+
+  tracks.push(...extractTracks());
 
   return tracks;
 }
-
 
 async function fetchUrl(apiUrl) {
   try {
@@ -102,17 +96,16 @@ document.body.appendChild(button);
 
 button.addEventListener("click", async function () {
   const tracks = await getAllTracks();
+
   let downloadedCount = 0;
 
-  console.log(tracks);
-  
-
+  console.log(`Start download! Total ${tracks.length} tracks.`);
   for (const t of tracks) {
     try {
       await downloadFromApi(t.url, t.title);
       downloadedCount++;
       console.log(`Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await sleep(DELAY_TIME);
     } catch (error) {
       console.error(`Failed to download ${t.title}:`, error);
     }
