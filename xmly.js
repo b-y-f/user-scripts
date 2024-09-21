@@ -96,12 +96,26 @@ button.style.right = "10px";
 button.style.zIndex = 1000;
 document.body.appendChild(button);
 
+const progressDisplay = document.createElement("div");
+progressDisplay.style.position = "fixed";
+progressDisplay.style.bottom = "50px";
+progressDisplay.style.right = "10px";
+progressDisplay.style.zIndex = 1000;
+progressDisplay.style.backgroundColor = "white";
+progressDisplay.style.padding = "10px";
+progressDisplay.style.border = "1px solid black";
+progressDisplay.style.display = "none"; // Initially hidden
+document.body.appendChild(progressDisplay);
+
 button.addEventListener("click", async function () {
   const tracks = await getAllTracks();
 
   let downloadedCount = 0;
 
   console.log(`Start download! Total ${tracks.length} tracks.`);
+  progressDisplay.textContent = `Start download! Total ${tracks.length} tracks.`;
+  progressDisplay.style.display = "block"; // Show progress display
+
   for (const t of tracks) {
     try {
       await downloadFromApi(t.title, t.url);
@@ -109,11 +123,19 @@ button.addEventListener("click", async function () {
       console.log(
         `Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`
       );
+      progressDisplay.textContent = `Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`;
       await sleep(EACH_DOWNLOAD_DELAY);
     } catch (error) {
       console.error(`Failed to download ${t.title}:`, error);
+      progressDisplay.textContent = `Failed to download ${t.title}: ${error.message}`;
     }
   }
 
   console.log("All downloads completed!");
+  progressDisplay.textContent = "All downloads completed!";
+
+  // Hide progress display after 2 seconds
+  setTimeout(() => {
+    progressDisplay.style.display = "none";
+  }, 2000);
 });
