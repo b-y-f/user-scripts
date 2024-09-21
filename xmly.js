@@ -9,7 +9,10 @@
 // @require         https://registry.npmmirror.com/crypto-js/4.1.1/files/crypto-js.js
 // @license         MIT
 // ==/UserScript==
-const DELAY_TIME = 1000;
+
+// increase this value if load slow, otherwise it will use last page data 
+const NEXT_PAGE_LOAD_TIME = 3000;
+const EACH_DOWNLOAD_DELAY = 500;
 
 function decrypt(t) {
   return CryptoJS.AES.decrypt(
@@ -52,7 +55,7 @@ async function getAllTracks() {
   while (nextButton) {
     tracks.push(...extractTracks());
     nextButton.click();
-    await sleep(DELAY_TIME);
+    await sleep(NEXT_PAGE_LOAD_TIME);
     nextButton = document.querySelector(NEXT_BUTTON_SELECTOR);
   }
 
@@ -105,7 +108,7 @@ button.addEventListener("click", async function () {
       await downloadFromApi(t.url, t.title);
       downloadedCount++;
       console.log(`Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`);
-      await sleep(DELAY_TIME);
+      await sleep(EACH_DOWNLOAD_DELAY);
     } catch (error) {
       console.error(`Failed to download ${t.title}:`, error);
     }
