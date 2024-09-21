@@ -1,2 +1,19 @@
 # 喜马拉雅 greasyfork 
 
+## Intro
+
+简易喜马拉雅音频下载
+
+## How to use?
+
+1. 点进专辑 注意 url： **https://www.ximalaya.com/album/123456**
+
+1. 点击右下角按钮
+
+1. 开始下载， 看下之前设置的文件夹
+
+## Note：
+
+浏览器的话一定要改成**不询问**下载路径！！！
+
+![](https://i.ytimg.com/vi/B9HqVUg_nww/maxresdefault.jpg)
