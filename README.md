@@ -1,1 +1,2 @@
-{'reqId': '804da5ca-1340048', 'ret': 927, 'msg': '很抱歉，由于版权方要求，您所在的地区/国家暂时无法使用该资源', 'extendInfo': {'isDownHimalayaApp': True, 'currentPositionFrom': 2, 'downHimalayaAppUrl': 'https://m.ximalaya.com/gatekeeper/himalaya', 'msg': '应版权方要求，该资源仅限中国大陆用户使用,若你当前位于中国大陆,请点击此处允许我们<location>获取你的准确位置</location>\n\n请<b>下载国际版Himalaya App</b>，海外最大华语有声平台，100,000+畅销书、大师课、热门小说、相声评书、亲子儿童… 会员无限畅听！', 'pageStyle': 'old'}}
+# 喜马拉雅 greasyfork 
+
