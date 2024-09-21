@@ -71,7 +71,6 @@ async function fetchUrl(apiUrl) {
   try {
     const response = await fetch(apiUrl);
     const data = await response.json();
-    console.log(data);
     const bestAudioUrl = data.trackInfo.playUrlList[0].url;
     return bestAudioUrl;
   } catch (error) {
