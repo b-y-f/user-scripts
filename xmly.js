@@ -8,6 +8,7 @@
 // @icon            https://www.ximalaya.com/favicon.ico
 // @require         https://registry.npmmirror.com/crypto-js/4.1.1/files/crypto-js.js
 // @license         MIT
+// @namespace https://greasyfork.org/users/323093
 // ==/UserScript==
 
 const EACH_DOWNLOAD_DELAY = 500;
