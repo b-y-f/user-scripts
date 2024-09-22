@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.0.0
+// @version         1.1.0
 // @description     XMLY Downloader
 // @author          Y
 // @match           *://www.ximalaya.com/*
@@ -75,27 +75,20 @@ async function fetchUrl(apiUrl) {
   }
 }
 
-async function downloadFromApi(title, url) {
+async function downloadFromApi(title, url, index, isSequenceOrder) {
   try {
     const fetchedUrl = await fetchUrl(url);
     const trueUrl = decrypt(fetchedUrl);
+    const fileName = isSequenceOrder ? `${index}.${title}.m4a` : `${title}.m4a`;
     GM_download({
       url: trueUrl,
-      name: `${title}.m4a`,
+      name: fileName,
       saveAs: true,
     });
   } catch (error) {
     console.error("Error downloading the file:", error);
   }
 }
-
-const button = document.createElement("button");
-button.textContent = "Download Tracks";
-button.style.position = "fixed";
-button.style.bottom = "10px";
-button.style.right = "10px";
-button.style.zIndex = 1000;
-document.body.appendChild(button);
 
 const progressDisplay = document.createElement("div");
 progressDisplay.style.position = "fixed";
@@ -108,23 +101,51 @@ progressDisplay.style.border = "1px solid black";
 progressDisplay.style.display = "none"; // Initially hidden
 document.body.appendChild(progressDisplay);
 
+// Create a container div
+const container = document.createElement("div");
+container.style.position = "fixed";
+container.style.bottom = "10px";
+container.style.right = "10px";
+container.style.zIndex = 1000;
+container.style.display = "flex";
+container.style.alignItems = "center";
+document.body.appendChild(container);
+
+// Create the checkbox
+const seqNumberCheckbox = document.createElement("input");
+seqNumberCheckbox.type = "checkbox";
+container.appendChild(seqNumberCheckbox);
+
+const label = document.createElement("label");
+label.htmlFor = "sequenceOrder";
+label.textContent = "加序号";
+label.style.marginLeft = "5px";
+label.style.backgroundColor = "white";
+container.appendChild(label);
+
+const button = document.createElement("button");
+button.textContent = "Download";
+button.style.marginLeft = "10px";
+container.appendChild(button);
+
+let isSequenceOrder = seqNumberCheckbox.checked;
+seqNumberCheckbox.addEventListener("change", () => {
+  isSequenceOrder = seqNumberCheckbox.checked;
+});
+
 button.addEventListener("click", async function () {
   const tracks = await getAllTracks();
 
-  let downloadedCount = 0;
-
   console.log(`Start download! Total ${tracks.length} tracks.`);
-  progressDisplay.textContent = `Start download! Total ${tracks.length} tracks.`;
-  progressDisplay.style.display = "block"; // Show progress display
+  progressDisplay.style.display = "block";
 
-  for (const t of tracks) {
+  for (let index = 0; index < tracks.length; index++) {
+    const t = tracks[index];
     try {
-      await downloadFromApi(t.title, t.url);
-      downloadedCount++;
-      console.log(
-        `Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`
-      );
-      progressDisplay.textContent = `Downloaded ${downloadedCount} of ${tracks.length}: ${t.title}`;
+      await downloadFromApi(t.title, t.url, index, isSequenceOrder);
+      progressDisplay.textContent = `Downloaded ${index + 1} of ${
+        tracks.length
+      }: ${t.title}`;
       await sleep(EACH_DOWNLOAD_DELAY);
     } catch (error) {
       console.error(`Failed to download ${t.title}:`, error);
