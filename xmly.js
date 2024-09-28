@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.1.0
+// @version         1.1.1
 // @description     XMLY Downloader
 // @author          Y
 // @match           *://www.ximalaya.com/*
@@ -26,10 +26,12 @@ function extractTrackUrl(tracks) {
 
 async function getAllTracks() {
   function getTotalTrackNumber() {
-    const element = Array.from(document.querySelectorAll(".title.active")).find(el => el.textContent.includes("声音"));
+    const element = Array.from(document.querySelectorAll(".title.active")).find(
+      (el) => el.textContent.includes("声音")
+    );
     const numberMatch = element.textContent.match(/\d+/);
     const number = numberMatch ? parseInt(numberMatch[0], 10) : null;
-    return number
+    return number;
   }
 
   function getAlbumId() {
@@ -39,7 +41,7 @@ async function getAllTracks() {
     return albumId;
   }
 
-  const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${getAlbumId()}&pageNum=1&pageSize=${getTotalTrackNumber()}`;
+  const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${getAlbumId()}&pageNum=1&pageSize=${getTotalTrackNumber()}&sort=0`;
   const response = await fetch(apiUrl);
   const resJson = await response.json();
   const tracks = resJson.data.tracks;
