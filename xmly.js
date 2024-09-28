@@ -26,16 +26,15 @@ function extractTrackUrl(tracks) {
 
 async function getAllTracks() {
   function getTotalTrackNumber() {
-    const element = document.querySelector(".title.active .s_O");
-    const textContent = element.textContent;
-    const numberMatch = textContent.match(/\d+/);
+    const element = Array.from(document.querySelectorAll(".title.active")).find(el => el.textContent.includes("声音"));
+    const numberMatch = element.textContent.match(/\d+/);
     const number = numberMatch ? parseInt(numberMatch[0], 10) : null;
-    return number;
+    return number
   }
 
   function getAlbumId() {
     var currentURL = window.location.href;
-    var match = currentURL.match(/album\/(\d+)/);
+    var match = currentURL.match(/.*\/(\d+)/);
     var albumId = match ? match[1] : null;
     return albumId;
   }
