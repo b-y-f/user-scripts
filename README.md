@@ -6,7 +6,7 @@
 
 ## How to use?
 
-1. 点进专辑 注意 url： **https://www.ximalaya.com/album/123456**
+1. 点进专辑 注意 url： **https://www.ximalaya.com/*/123456**
 
 1. 点击右下角按钮
 
