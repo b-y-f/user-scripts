@@ -154,7 +154,7 @@ function initializeUI() {
       const t = tracks[index];
       try {
         await downloadFromApi(t.title, t.url, index, isSequenceOrder);
-        progressDisplay.textContent = `Downloaded ${index + 1} of ${tracks.length}: ${t.title}`;
+        progressDisplay.textContent = `Downloaded ${index + 1} / ${tracks.length}`;
         await sleep(EACH_DOWNLOAD_DELAY);
       } catch (error) {
         console.error(`Failed to download ${t.title}:`, error);
