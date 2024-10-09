@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.1.2
+// @version         1.1.3
 // @description     XMLY Downloader
 // @author          Y
 // @match           *://www.ximalaya.com/*
@@ -11,7 +11,6 @@
 // @namespace https://greasyfork.org/users/323093
 // ==/UserScript==
 
-const EACH_DOWNLOAD_DELAY = 500;
 const MAX_TRACK_PER_API = 100;
 
 function extractTrackUrl(tracks) {
@@ -90,11 +89,23 @@ async function downloadFromApi(title, url, index, isSequenceOrder) {
     const fetchedUrl = await fetchUrl(url);
     const trueUrl = decrypt(fetchedUrl);
     const fileName = isSequenceOrder ? `${index}.${title}.m4a` : `${title}.m4a`;
-    GM_download({
-      url: trueUrl,
-      name: fileName,
-      saveAs: true,
-    });
+
+    const downloadFile = async (attempt = 1) => {
+      GM_download({
+        url: trueUrl,
+        name: fileName,
+        saveAs: true,
+        onerror: async (e) => {
+          console.error(
+            `Attempt ${attempt} failed for ${fileName}, trying again...`,
+            e
+          );
+          await downloadFile(attempt + 1);
+        },
+      });
+    };
+
+    await downloadFile();
   } catch (error) {
     console.error("Error downloading the file:", error);
   }
@@ -157,7 +168,6 @@ function initializeUI() {
         progressDisplay.textContent = `Downloaded ${index + 1} / ${
           tracks.length
         }`;
-        await sleep(EACH_DOWNLOAD_DELAY);
       } catch (error) {
         console.error(`Failed to download ${t.title}:`, error);
         progressDisplay.textContent = `Failed to download ${t.title}: ${error.message}`;
