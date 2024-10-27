@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.1.3
+// @version         1.2.0
 // @description     XMLY Downloader
 // @author          Y
 // @match           *://www.ximalaya.com/*
@@ -12,6 +12,25 @@
 // ==/UserScript==
 
 const MAX_TRACK_PER_API = 100;
+
+async function fetchUntilSuccess(url) {
+  while (true) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        return response; // Return the response if it's successful
+      } else {
+        console.error(
+          `Failed to fetch: ${response.status} ${response.statusText}`
+        );
+      }
+    } catch (error) {
+      console.error(`Fetch error: ${error.message}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
+  }
+}
 
 function extractTrackUrl(tracks) {
   let timestamp = Date.now();
@@ -49,7 +68,8 @@ async function getAllTracks() {
     const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=100&sort=0`;
     const response = await fetch(apiUrl);
     const resJson = await response.json();
-    tracks = tracks.concat(resJson.data.tracks);
+    const partialTracks = resJson.data.tracks;
+    tracks = tracks.concat(partialTracks);
   }
   console.log(tracks);
 
@@ -69,13 +89,9 @@ function decrypt(t) {
   ).toString(CryptoJS.enc.Utf8);
 }
 
-async function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function fetchUrl(apiUrl) {
   try {
-    const response = await fetch(apiUrl);
+    const response = await fetchUntilSuccess(apiUrl);
     const data = await response.json();
     const bestAudioUrl = data.trackInfo.playUrlList[0].url;
     return bestAudioUrl;
@@ -84,30 +100,14 @@ async function fetchUrl(apiUrl) {
   }
 }
 
-async function downloadFromApi(title, url, index, isSequenceOrder) {
+async function getTrueUrl(title, url, index, isSequenceOrder) {
   try {
     const fetchedUrl = await fetchUrl(url);
     const trueUrl = decrypt(fetchedUrl);
     const fileName = isSequenceOrder ? `${index}.${title}.m4a` : `${title}.m4a`;
-
-    const downloadFile = async (attempt = 1) => {
-      GM_download({
-        url: trueUrl,
-        name: fileName,
-        saveAs: true,
-        onerror: async (e) => {
-          console.error(
-            `Attempt ${attempt} failed for ${fileName}, trying again...`,
-            e
-          );
-          await downloadFile(attempt + 1);
-        },
-      });
-    };
-
-    await downloadFile();
+    return { fileName, trueUrl };
   } catch (error) {
-    console.error("Error downloading the file:", error);
+    console.error("Error getting the true url:", error);
   }
 }
 
@@ -146,7 +146,7 @@ function initializeUI() {
   container.appendChild(label);
 
   const button = document.createElement("button");
-  button.textContent = "Download";
+  button.textContent = "解析";
   button.style.marginLeft = "10px";
   container.appendChild(button);
 
@@ -155,32 +155,50 @@ function initializeUI() {
     isSequenceOrder = seqNumberCheckbox.checked;
   });
 
-  button.addEventListener("click", async function () {
+  button.addEventListener("click", async function parseUrls() {
+    progressDisplay.style.display = "block";
+    progressDisplay.textContent = "URL解析进行中...";
+
     const tracks = await getAllTracks();
 
-    console.log(`Start download! Total ${tracks.length} tracks.`);
-    progressDisplay.style.display = "block";
-
+    let finalDownloadList = [];
     for (let index = 0; index < tracks.length; index++) {
       const t = tracks[index];
-      try {
-        await downloadFromApi(t.title, t.url, index, isSequenceOrder);
-        progressDisplay.textContent = `Downloaded ${index + 1} / ${
-          tracks.length
-        }`;
-      } catch (error) {
-        console.error(`Failed to download ${t.title}:`, error);
-        progressDisplay.textContent = `Failed to download ${t.title}: ${error.message}`;
-      }
+      const item = await getTrueUrl(t.title, t.url, index, isSequenceOrder);
+      finalDownloadList.push(item);
+      progressDisplay.textContent = `解析进程: ${index} / ${tracks.length}`;
     }
 
-    console.log("All downloads completed!");
-    progressDisplay.textContent = "All downloads completed!";
-
-    // Hide progress display after 2 seconds
-    setTimeout(() => {
-      progressDisplay.style.display = "none";
-    }, 2000);
+    console.log(finalDownloadList);
+    
+    if (finalDownloadList.length > 0) {
+      progressDisplay.textContent = "URL解析完成。";
+      button.textContent = "下载";
+      button.removeEventListener("click", parseUrls);
+      button.addEventListener("click", function downloadFiles() {
+        let count = 0;
+        progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
+        finalDownloadList.forEach((item) => {
+          GM_download({
+            url: item.trueUrl,
+            name: item.fileName,
+            onerror: function (error) {
+              console.error("Error downloading " + item.fileName, error);
+            },
+            ontimeout: function () {
+              console.error("Timeout downloading " + item.fileName);
+            },
+            onload: function () {
+              console.log("Successfully downloaded " + item.fileName);
+              count++;
+              progressDisplay.textContent = `Downloaded ${count} / ${tracks.length}`;
+            },
+          });
+        });
+      });
+    }else{
+      progressDisplay.textContent = "URL解析失败，请重试";
+    }
   });
 }
 
