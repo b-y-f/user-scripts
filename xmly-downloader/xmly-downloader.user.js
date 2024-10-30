@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.2.1
+// @version         1.2.2
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -18,17 +18,16 @@ async function fetchUntilSuccess(url) {
     try {
       const response = await fetch(url);
       if (response.ok) {
-        return response; // Return the response if it's successful
-      } else {
-        console.error(
-          `Failed to fetch: ${response.status} ${response.statusText}`
-        );
+        const data = await response.json();
+        return data;
       }
+      console.error(
+        `Failed to fetch: ${response.status} ${response.statusText}`
+      );
     } catch (error) {
       console.error(`Fetch error: ${error.message}`);
     }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 }
 
@@ -45,51 +44,35 @@ function extractTrackUrl(tracks) {
 
 async function getAllTracks() {
   function getAlbumId() {
-    var currentURL = window.location.href;
-    var match = currentURL.match(/.*\/(\d+)/);
-    var albumId = match ? match[1] : null;
-    return albumId;
+    const match = window.location.href.match(/.*\/(\d+)/);
+    return match ? match[1] : null;
   }
 
   async function getTotalTrackCount(albumId) {
     const apiUrl = `https://www.ximalaya.com/tdk-web/seo/search/albumInfo?albumId=${albumId}`;
-    const response = await fetch(apiUrl);
-    const resJson = await response.json();
-    const trackCount = resJson.data.trackCount;
-    return trackCount;
+    const data = await fetchUntilSuccess(apiUrl);
+    return data.data.trackCount;
+  }
+
+  async function fetchTracksForPage(albumId, pageNum) {
+    const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=${MAX_TRACK_PER_API}&sort=0`;
+    const data = await fetchUntilSuccess(apiUrl);
+    return data.data.tracks;
   }
 
   const albumId = getAlbumId();
-  let tracks = [];
   const totalTrackNumber = await getTotalTrackCount(albumId);
-  // console.log(totalTrackNumber);
-  const pages = Math.floor(totalTrackNumber / MAX_TRACK_PER_API) + 1;
+  const pages = Math.ceil(totalTrackNumber / MAX_TRACK_PER_API);
 
+  let tracks = [];
   for (let pageNum = 1; pageNum <= pages; pageNum++) {
-    let partialTracks = [];
-
-    while (true) {
-      const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=100&sort=0`;
-      try {
-        const response = await fetch(apiUrl);
-        const resJson = await response.json();
-        partialTracks = resJson.data.tracks;
-
-        if (partialTracks && partialTracks.length > 0) {
-          break;
-        }
-      } catch (error) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    if (partialTracks && partialTracks.length > 0) {
+    const partialTracks = await fetchTracksForPage(albumId, pageNum);
+    if (partialTracks?.length > 0) {
       tracks = tracks.concat(partialTracks);
     }
   }
 
   console.log(tracks);
-
   return extractTrackUrl(tracks);
 }
 
@@ -108,8 +91,7 @@ function decrypt(t) {
 
 async function fetchUrl(apiUrl) {
   try {
-    const response = await fetchUntilSuccess(apiUrl);
-    const data = await response.json();
+    const data = await fetchUntilSuccess(apiUrl);    
     const bestAudioUrl = data.trackInfo.playUrlList[0].url;
     return bestAudioUrl;
   } catch (error) {
