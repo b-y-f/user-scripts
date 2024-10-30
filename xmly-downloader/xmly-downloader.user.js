@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.2.2
+// @version         1.2.3
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -66,10 +66,14 @@ async function getAllTracks() {
 
   let tracks = [];
   for (let pageNum = 1; pageNum <= pages; pageNum++) {
-    const partialTracks = await fetchTracksForPage(albumId, pageNum);
-    if (partialTracks?.length > 0) {
-      tracks = tracks.concat(partialTracks);
+    let partialTracks = [];
+    while (true) {
+      partialTracks = await fetchTracksForPage(albumId, pageNum);
+      if (partialTracks && partialTracks.length > 0) {
+        break;
+      }
     }
+    tracks = tracks.concat(partialTracks);
   }
 
   console.log(tracks);
@@ -91,11 +95,18 @@ function decrypt(t) {
 
 async function fetchUrl(apiUrl) {
   try {
-    const data = await fetchUntilSuccess(apiUrl);    
+    const data = await fetchUntilSuccess(apiUrl);
+    if (data.ret === 1001) {
+      throw new Error(
+        "Rate limited!!! Wait for a while then download again..."
+      );
+      alert("限制下载了，休息一会儿再下载。");
+    }
     const bestAudioUrl = data.trackInfo.playUrlList[0].url;
     return bestAudioUrl;
   } catch (error) {
     console.error("Error fetching the URL:", error);
+    throw error;
   }
 }
 
@@ -107,6 +118,7 @@ async function getTrueUrl(title, url, index, isSequenceOrder) {
     return { fileName, trueUrl };
   } catch (error) {
     console.error("Error getting the true url:", error);
+    throw error;
   }
 }
 
