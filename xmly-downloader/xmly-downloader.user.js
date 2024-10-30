@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.2.0
+// @version         1.2.1
 // @description     XMLY Downloader
-// @author          Y
+// @author          B-Y-F
 // @match           *://www.ximalaya.com/*
 // @grant           GM_download
 // @icon            https://www.ximalaya.com/favicon.ico
@@ -61,16 +61,33 @@ async function getAllTracks() {
 
   const albumId = getAlbumId();
   let tracks = [];
-  const pages =
-    Math.floor((await getTotalTrackCount(albumId)) / MAX_TRACK_PER_API) + 1;
+  const totalTrackNumber = await getTotalTrackCount(albumId);
+  // console.log(totalTrackNumber);
+  const pages = Math.floor(totalTrackNumber / MAX_TRACK_PER_API) + 1;
 
   for (let pageNum = 1; pageNum <= pages; pageNum++) {
-    const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=100&sort=0`;
-    const response = await fetch(apiUrl);
-    const resJson = await response.json();
-    const partialTracks = resJson.data.tracks;
-    tracks = tracks.concat(partialTracks);
+    let partialTracks = [];
+
+    while (true) {
+      const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=100&sort=0`;
+      try {
+        const response = await fetch(apiUrl);
+        const resJson = await response.json();
+        partialTracks = resJson.data.tracks;
+
+        if (partialTracks && partialTracks.length > 0) {
+          break;
+        }
+      } catch (error) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    if (partialTracks && partialTracks.length > 0) {
+      tracks = tracks.concat(partialTracks);
+    }
   }
+
   console.log(tracks);
 
   return extractTrackUrl(tracks);
@@ -170,7 +187,7 @@ function initializeUI() {
     }
 
     console.log(finalDownloadList);
-    
+
     if (finalDownloadList.length > 0) {
       progressDisplay.textContent = "URL解析完成。";
       button.textContent = "下载";
@@ -196,7 +213,7 @@ function initializeUI() {
           });
         });
       });
-    }else{
+    } else {
       progressDisplay.textContent = "URL解析失败，请重试";
     }
   });
