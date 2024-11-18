@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.2.3
+// @version         1.3.0
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -48,35 +48,47 @@ async function getAllTracks() {
     return match ? match[1] : null;
   }
 
-  async function getTotalTrackCount(albumId) {
+  async function getTotalTrackCount() {
+    const albumId = getAlbumId();
     const apiUrl = `https://www.ximalaya.com/tdk-web/seo/search/albumInfo?albumId=${albumId}`;
     const data = await fetchUntilSuccess(apiUrl);
     return data.data.trackCount;
   }
 
-  async function fetchTracksForPage(albumId, pageNum) {
-    const apiUrl = `https://www.ximalaya.com/revision/album/v1/getTracksList?albumId=${albumId}&pageNum=${pageNum}&pageSize=${MAX_TRACK_PER_API}&sort=0`;
-    const data = await fetchUntilSuccess(apiUrl);
-    return data.data.tracks;
-  }
+  async function fetchTracks(pages) {
+    let tracks = [];
 
-  const albumId = getAlbumId();
-  const totalTrackNumber = await getTotalTrackCount(albumId);
-  const pages = Math.ceil(totalTrackNumber / MAX_TRACK_PER_API);
-
-  let tracks = [];
-  for (let pageNum = 1; pageNum <= pages; pageNum++) {
-    let partialTracks = [];
-    while (true) {
-      partialTracks = await fetchTracksForPage(albumId, pageNum);
-      if (partialTracks && partialTracks.length > 0) {
-        break;
+    for (let index = 0; index < pages; index++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      document.querySelectorAll(".sound-list li").forEach((li) => {
+        if (li.classList.contains("_nO")) {
+          // Assuming the child anchor tag holds the title and URL
+          const anchor = li.querySelector("a");
+          if (anchor) {
+            const title = anchor.getAttribute("title");
+            const trackId = anchor.getAttribute("href").split('/').pop();
+            tracks.push({ title, trackId });
+          } else {
+            console.log("No anchor tag found in li with class '_nO'");
+          }
+        }
+      });
+      // Only execute part2 for the first n-1 iterations
+      if (index < pages - 1) {
+        const nextPageButton = document.querySelector(
+          "li.page-next a.page-link"
+        );
+        nextPageButton.click();
       }
     }
-    tracks = tracks.concat(partialTracks);
+
+    return tracks;
   }
 
-  console.log(tracks);
+  const totalTrackCount = await getTotalTrackCount();
+  const pages = totalTrackCount % 30;
+  const tracks = await fetchTracks(pages);
+  console.log("raw tracks", tracks);
   return extractTrackUrl(tracks);
 }
 
@@ -100,7 +112,6 @@ async function fetchUrl(apiUrl) {
       throw new Error(
         "Rate limited!!! Wait for a while then download again..."
       );
-      alert("限制下载了，休息一会儿再下载。");
     }
     const bestAudioUrl = data.trackInfo.playUrlList[0].url;
     return bestAudioUrl;
