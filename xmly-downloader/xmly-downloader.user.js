@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.1
+// @version         1.3.2
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -58,7 +58,7 @@ async function getAllTracks() {
   async function fetchTracks(pages) {
     let tracks = [];
 
-    for (let index = 0; index < pages; index++) {
+    for (let index = 0; index < pages; index++) {      
       await new Promise((resolve) => setTimeout(resolve, 2000));
       document.querySelectorAll(".sound-list li").forEach((li) => {
         if (li.classList.contains("_nO")) {
@@ -86,7 +86,7 @@ async function getAllTracks() {
   }
 
   const totalTrackCount = await getTotalTrackCount();
-  const pages = totalTrackCount % 30;
+  const pages = Math.ceil(totalTrackCount / 30);
   const tracks = await fetchTracks(pages);
   console.log("raw tracks", tracks);
   return extractTrackUrl(tracks);
