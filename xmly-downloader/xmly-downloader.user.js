@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.0
+// @version         1.3.1
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -66,7 +66,7 @@ async function getAllTracks() {
           const anchor = li.querySelector("a");
           if (anchor) {
             const title = anchor.getAttribute("title");
-            const trackId = anchor.getAttribute("href").split('/').pop();
+            const trackId = anchor.getAttribute("href").split("/").pop();
             tracks.push({ title, trackId });
           } else {
             console.log("No anchor tag found in li with class '_nO'");
@@ -121,11 +121,11 @@ async function fetchUrl(apiUrl) {
   }
 }
 
-async function getTrueUrl(title, url, index, isSequenceOrder) {
+async function getTrueUrl(title, url) {
   try {
     const fetchedUrl = await fetchUrl(url);
     const trueUrl = decrypt(fetchedUrl);
-    const fileName = isSequenceOrder ? `${index}.${title}.m4a` : `${title}.m4a`;
+    const fileName = `${title}.m4a`;
     return { fileName, trueUrl };
   } catch (error) {
     console.error("Error getting the true url:", error);
@@ -186,7 +186,7 @@ function initializeUI() {
     let finalDownloadList = [];
     for (let index = 0; index < tracks.length; index++) {
       const t = tracks[index];
-      const item = await getTrueUrl(t.title, t.url, index, isSequenceOrder);
+      const item = await getTrueUrl(t.title, t.url, index);
       finalDownloadList.push(item);
       progressDisplay.textContent = `解析进程: ${index} / ${tracks.length}`;
     }
@@ -200,10 +200,12 @@ function initializeUI() {
       button.addEventListener("click", function downloadFiles() {
         let count = 0;
         progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
-        finalDownloadList.forEach((item) => {
+        finalDownloadList.forEach((item, index) => {
           GM_download({
             url: item.trueUrl,
-            name: item.fileName,
+            name: isSequenceOrder
+              ? `${index}.${item.fileName}`
+              : `${item.fileName}`,
             onerror: function (error) {
               console.error("Error downloading " + item.fileName, error);
             },
