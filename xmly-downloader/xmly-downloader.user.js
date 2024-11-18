@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.2
+// @version         1.3.3
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -10,8 +10,6 @@
 // @license         MIT
 // @namespace https://greasyfork.org/users/323093
 // ==/UserScript==
-
-const MAX_TRACK_PER_API = 100;
 
 async function fetchUntilSuccess(url) {
   while (true) {
@@ -42,7 +40,7 @@ function extractTrackUrl(tracks) {
   });
 }
 
-async function getAllTracks() {
+async function getAllTrackIds() {
   function getAlbumId() {
     const match = window.location.href.match(/.*\/(\d+)/);
     return match ? match[1] : null;
@@ -58,7 +56,7 @@ async function getAllTracks() {
   async function fetchTracks(pages) {
     let tracks = [];
 
-    for (let index = 0; index < pages; index++) {      
+    for (let index = 0; index < pages; index++) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       document.querySelectorAll(".sound-list li").forEach((li) => {
         if (li.classList.contains("_nO")) {
@@ -160,15 +158,8 @@ function initializeUI() {
   seqNumberCheckbox.type = "checkbox";
   container.appendChild(seqNumberCheckbox);
 
-  const label = document.createElement("label");
-  label.htmlFor = "sequenceOrder";
-  label.textContent = "加序号";
-  label.style.marginLeft = "5px";
-  label.style.backgroundColor = "white";
-  container.appendChild(label);
-
   const button = document.createElement("button");
-  button.textContent = "解析";
+  button.textContent = "解析ID";
   button.style.marginLeft = "10px";
   container.appendChild(button);
 
@@ -177,52 +168,64 @@ function initializeUI() {
     isSequenceOrder = seqNumberCheckbox.checked;
   });
 
-  button.addEventListener("click", async function parseUrls() {
-    progressDisplay.style.display = "block";
-    progressDisplay.textContent = "URL解析进行中...";
+  button.addEventListener("click", async function parseIds() {
+    const tracks = await getAllTrackIds();
+    button.textContent = "解析URL";
 
-    const tracks = await getAllTracks();
+    button.removeEventListener("click", parseIds);
+    button.addEventListener("click", async function parseUrls() {
+      progressDisplay.style.display = "block";
+      progressDisplay.textContent = "URL解析进行中...";
+      let finalDownloadList = [];
+      for (let index = 0; index < tracks.length; index++) {
+        const t = tracks[index];
+        const item = await getTrueUrl(t.title, t.url, index);
+        finalDownloadList.push(item);
+        progressDisplay.textContent = `解析进程: ${index} / ${tracks.length}`;
+      }
 
-    let finalDownloadList = [];
-    for (let index = 0; index < tracks.length; index++) {
-      const t = tracks[index];
-      const item = await getTrueUrl(t.title, t.url, index);
-      finalDownloadList.push(item);
-      progressDisplay.textContent = `解析进程: ${index} / ${tracks.length}`;
-    }
+      console.log(finalDownloadList);
 
-    console.log(finalDownloadList);
+      if (finalDownloadList.length > 0) {
+        progressDisplay.textContent = "URL解析完成。";
+        button.textContent = "下载";
 
-    if (finalDownloadList.length > 0) {
-      progressDisplay.textContent = "URL解析完成。";
-      button.textContent = "下载";
-      button.removeEventListener("click", parseUrls);
-      button.addEventListener("click", function downloadFiles() {
-        let count = 0;
-        progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
-        finalDownloadList.forEach((item, index) => {
-          GM_download({
-            url: item.trueUrl,
-            name: isSequenceOrder
-              ? `${index}.${item.fileName}`
-              : `${item.fileName}`,
-            onerror: function (error) {
-              console.error("Error downloading " + item.fileName, error);
-            },
-            ontimeout: function () {
-              console.error("Timeout downloading " + item.fileName);
-            },
-            onload: function () {
-              console.log("Successfully downloaded " + item.fileName);
-              count++;
-              progressDisplay.textContent = `Downloaded ${count} / ${tracks.length}`;
-            },
+        const label = document.createElement("label");
+        label.htmlFor = "sequenceOrder";
+        label.textContent = "加序号";
+        label.style.marginLeft = "5px";
+        label.style.backgroundColor = "white";
+        container.appendChild(label);
+
+        
+        button.removeEventListener("click", parseUrls);
+        button.addEventListener("click", function downloadFiles() {
+          let count = 0;
+          progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
+          finalDownloadList.forEach((item, index) => {
+            GM_download({
+              url: item.trueUrl,
+              name: isSequenceOrder
+                ? `${index}.${item.fileName}`
+                : `${item.fileName}`,
+              onerror: function (error) {
+                console.error("Error downloading " + item.fileName, error);
+              },
+              ontimeout: function () {
+                console.error("Timeout downloading " + item.fileName);
+              },
+              onload: function () {
+                console.log("Successfully downloaded " + item.fileName);
+                count++;
+                progressDisplay.textContent = `Downloaded ${count} / ${tracks.length}`;
+              },
+            });
           });
         });
-      });
-    } else {
-      progressDisplay.textContent = "URL解析失败，请重试";
-    }
+      } else {
+        progressDisplay.textContent = "URL解析失败，请重试";
+      }
+    });
   });
 }
 
