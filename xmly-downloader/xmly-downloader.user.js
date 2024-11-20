@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.3
+// @version         1.3.4
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -153,28 +153,20 @@ function initializeUI() {
   container.style.alignItems = "center";
   document.body.appendChild(container);
 
-  // Create the checkbox
-  const seqNumberCheckbox = document.createElement("input");
-  seqNumberCheckbox.type = "checkbox";
-  container.appendChild(seqNumberCheckbox);
-
   const button = document.createElement("button");
   button.textContent = "解析ID";
   button.style.marginLeft = "10px";
   container.appendChild(button);
 
-  let isSequenceOrder = seqNumberCheckbox.checked;
-  seqNumberCheckbox.addEventListener("change", () => {
-    isSequenceOrder = seqNumberCheckbox.checked;
-  });
-
   button.addEventListener("click", async function parseIds() {
+    progressDisplay.style.display = "block";
+    progressDisplay.textContent = "ID解析进行中...";
     const tracks = await getAllTrackIds();
+    progressDisplay.textContent = "ID解析完成";
     button.textContent = "解析URL";
 
     button.removeEventListener("click", parseIds);
     button.addEventListener("click", async function parseUrls() {
-      progressDisplay.style.display = "block";
       progressDisplay.textContent = "URL解析进行中...";
       let finalDownloadList = [];
       for (let index = 0; index < tracks.length; index++) {
@@ -190,14 +182,21 @@ function initializeUI() {
         progressDisplay.textContent = "URL解析完成。";
         button.textContent = "下载";
 
+        // Create the checkbox
         const label = document.createElement("label");
         label.htmlFor = "sequenceOrder";
         label.textContent = "加序号";
         label.style.marginLeft = "5px";
         label.style.backgroundColor = "white";
         container.appendChild(label);
+        const seqNumberCheckbox = document.createElement("input");
+        seqNumberCheckbox.type = "checkbox";
+        container.appendChild(seqNumberCheckbox);
+        let isSequenceOrder = seqNumberCheckbox.checked;
+        seqNumberCheckbox.addEventListener("change", () => {
+          isSequenceOrder = seqNumberCheckbox.checked;
+        });
 
-        
         button.removeEventListener("click", parseUrls);
         button.addEventListener("click", function downloadFiles() {
           let count = 0;

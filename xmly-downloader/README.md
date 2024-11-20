@@ -17,9 +17,3 @@
 浏览器的话一定要改成**不询问**下载路径！！！
 
 ![](https://i.ytimg.com/vi/B9HqVUg_nww/maxresdefault.jpg)
-
-## TODO
-
-- [x] 文件名前面加 序号选项。
-- [x] 修复进度条不匹配实际下载的问题。
-- [ ] 只在album 页显示
