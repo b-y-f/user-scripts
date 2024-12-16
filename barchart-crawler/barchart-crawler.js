@@ -135,9 +135,10 @@ function processData(objList) {
   // Filter the DataFrame based on the specified conditions
   df = df.query(
     df["openInterest"]
-      .gt(50)
+      .gt(100)
       .and(df["daysToExpiration"].gt(90))
-      .and(df["volumeOpenInterestRatio"].gt(15))
+      .and(df["volumeOpenInterestRatio"].ge(15))
+      .and(df["premium"].ge(1e6))
   );
 
   // Convert 'premium' values into string format "xx.xx B" for billions
@@ -181,7 +182,7 @@ async function getData() {
 
   const optDataRaw = optionData.map((obj) => obj.raw);
   const df = processData(optDataRaw);
-  downloadCSV(df, `option_${getFormattedDate()}.csv`)
+  downloadCSV(df, `option_${getFormattedDate()}.csv`);
 }
 
 // Create a button element
