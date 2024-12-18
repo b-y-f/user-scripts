@@ -6,9 +6,33 @@
 // @author       You
 // @require      https://cdn.jsdelivr.net/npm/danfojs@1.1.2/lib/bundle.min.js
 // @match        https://www.barchart.com/*
-// @grant         GM_download
+// @grant        GM_download
 
 // ==/UserScript==
+
+function createHeaders() {
+  const myHeader = new Headers();
+  myHeader.append("accept", "application/json");
+  myHeader.append("accept-language", "en,en-CN;q=0.9,zh-CN;q=0.8,zh;q=0.7");
+  myHeader.append("cookie", getCookie());
+  myHeader.append("dnt", "1");
+  myHeader.append("priority", "u=1, i");
+  myHeader.append(
+    "sec-ch-ua",
+    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"'
+  );
+  myHeader.append("sec-ch-ua-mobile", "?0");
+  myHeader.append("sec-ch-ua-platform", '"Windows"');
+  myHeader.append("sec-fetch-dest", "empty");
+  myHeader.append("sec-fetch-mode", "cors");
+  myHeader.append("sec-fetch-site", "same-origin");
+  myHeader.append(
+    "user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  );
+  myHeader.append("x-xsrf-token", getCookieValue("XSRF-TOKEN"));
+  return myHeader;
+}
 
 function getCookie() {
   return decodeURIComponent(document.cookie);
@@ -38,9 +62,9 @@ function getCookieValue(cookieName) {
   return null;
 }
 
-async function fetchData(page) {
+async function fetchUOAData(page) {
   const todayDate = getFormattedDate();
-  const url = `
+  const UOA = `
 https://www.barchart.com/proxies/core-api/v1/options/get?
 fields=symbol,baseSymbol,baseLastPrice,baseSymbolType,symbolType,strikePrice,expirationDate,daysToExpiration,bidPrice,midpoint,askPrice,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime,symbolCode
 &orderBy=volumeOpenInterestRatio
@@ -56,39 +80,20 @@ fields=symbol,baseSymbol,baseLastPrice,baseSymbolType,symbolType,strikePrice,exp
 &page=${page}
 &limit=1000
 &raw=1`;
-  const myHeaders = new Headers();
-  myHeaders.append("accept", "application/json");
-  myHeaders.append("accept-language", "en,en-CN;q=0.9,zh-CN;q=0.8,zh;q=0.7");
-  myHeaders.append("cookie", getCookie());
-  myHeaders.append("dnt", "1");
-  myHeaders.append("priority", "u=1, i");
-  myHeaders.append(
+
+  const headers = createHeaders();
+  headers.append(
     "referer",
     "https://www.barchart.com/options/unusual-activity/stocks"
   );
-  myHeaders.append(
-    "sec-ch-ua",
-    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"'
-  );
-  myHeaders.append("sec-ch-ua-mobile", "?0");
-  myHeaders.append("sec-ch-ua-platform", '"Windows"');
-  myHeaders.append("sec-fetch-dest", "empty");
-  myHeaders.append("sec-fetch-mode", "cors");
-  myHeaders.append("sec-fetch-site", "same-origin");
-  myHeaders.append(
-    "user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-  );
-  myHeaders.append("x-xsrf-token", getCookieValue("XSRF-TOKEN"));
-
   const requestOptions = {
     method: "GET",
-    headers: myHeaders,
+    headers: headers,
     redirect: "follow",
   };
 
   try {
-    const response = await fetch(url, requestOptions);
+    const response = await fetch(UOA, requestOptions);
     const result = await response.json();
     const data = result.data;
     return data;
@@ -97,9 +102,35 @@ fields=symbol,baseSymbol,baseLastPrice,baseSymbolType,symbolType,strikePrice,exp
   }
 }
 
-function processData(objList) {
+async function fetchUOVData() {
+  const UOV =
+    "https://www.barchart.com/proxies/core-api/v1/quotes/get?list=options.mostActive.us&fields=symbol%2CsymbolShortName%2ClastPrice%2CpriceChange%2CpercentChange%2CoptionsTotalVolume%2CoptionsTotalOpenInterest%2CoptionsImpliedVolatilityRank1y%2CoptionsTotalVolumePercentChange1m%2CoptionsCallVolume%2CoptionsPutVolume%2CoptionsPutCallVolumeRatio%2CsymbolCode%2CsymbolType%2ChasOptions&between(lastPrice%2C.10%2C)=&gt(volatility%2C100)=&orderBy=optionsTotalVolumePercentChange1m&orderDir=desc&limit=1000&meta=field.shortName%2Cfield.type%2Cfield.description%2Clists.lastUpdate&hasOptions=true&raw=1";
+
+  const headers = createHeaders();
+  headers.append(
+    "referer",
+    "https://www.barchart.com/options/volume-change/stocks?orderBy=optionsTotalVolumePercentChange1m&orderDir=desc"
+  );
+  const requestOptions = {
+    method: "GET",
+    headers: headers,
+    redirect: "follow",
+  };
+
+  try {
+    const response = await fetch(UOV, requestOptions);
+    const result = await response.json();
+    const data = result.data;
+
+    return data;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+function processUOA(objList) {
   let df = new dfd.DataFrame(objList);
-  df.drop({
+  df = df.drop({
     columns: [
       "baseSymbol",
       "expirationDate",
@@ -107,10 +138,9 @@ function processData(objList) {
       "baseSymbolType",
       "strikePrice",
     ],
-    inplace: true,
   });
-  df.addColumn("delta_abs", df["delta"].abs(), { inplace: true });
-  df.addColumn(
+  df = df.addColumn("delta_abs", df["delta"].abs());
+  df = df.addColumn(
     "tradeDate",
     df["tradeTime"].apply((tradeTime) => {
       // Convert UNIX timestamp to milliseconds
@@ -123,22 +153,18 @@ function processData(objList) {
       let estDateString = estDate.toISOString().split("T")[0];
 
       return estDateString;
-    }),
-    { inplace: true }
+    })
   );
 
   // Add 'premium' column calculated as midpoint * 100 * volume
-  df.addColumn("premium", df["midpoint"].mul(100).mul(df["volume"]), {
-    inplace: true,
-  });
+  df = df.addColumn("premium", df["midpoint"].mul(100).mul(df["volume"]));
 
   // Filter the DataFrame based on the specified conditions
   df = df.query(
-    df["openInterest"]
-      .gt(100)
-      .and(df["daysToExpiration"].gt(90))
+    df["daysToExpiration"]
+      .gt(90)
       .and(df["volumeOpenInterestRatio"].ge(15))
-      .and(df["premium"].ge(1e6))
+      .and(df["premium"].ge(1e6 * 0.5))
   );
 
   // Convert 'premium' values into string format "xx.xx B" for billions
@@ -173,34 +199,75 @@ function downloadCSV(dataFrame, fileName) {
   });
 }
 
-async function getData() {
+function processUOV(objList) {
+  let df = new dfd.DataFrame(objList);
+  df = df.drop({
+    columns: ["symbolShortName", "symbolCode", "symbolType", "hasOptions"],
+  });
+
+  // Calculate ratio
+  df = df.addColumn(
+    "optionsCallPutVolumeRatio",
+    df.column("optionsCallVolume").div(df.column("optionsPutVolume").add(1))
+  );
+
+  // Filter based on conditions
+  df = df.query(
+    df["optionsTotalVolumePercentChange1m"]
+      .gt(1)
+      .and(
+        df["optionsPutCallVolumeRatio"]
+          .gt(80)
+          .or(df["optionsCallPutVolumeRatio"].gt(80))
+      )
+  );
+
+  return df;
+}
+
+async function downloadUOAData() {
   const optionData = [];
   for (let i = 1; i <= 2; i++) {
-    const data = await fetchData(i);
+    const data = await fetchUOAData(i);
     optionData.push(...data);
   }
 
   const optDataRaw = optionData.map((obj) => obj.raw);
-  const df = processData(optDataRaw);
-  downloadCSV(df, `option_${getFormattedDate()}.csv`);
+  const df = processUOA(optDataRaw);
+  downloadCSV(df, `UOA_${getFormattedDate()}.csv`);
 }
 
-// Create a button element
-const button = document.createElement("button");
-button.textContent = "Get Data";
-button.style.position = "fixed";
-button.style.bottom = "20px";
-button.style.right = "20px";
-button.style.padding = "10px 20px";
-button.style.backgroundColor = "#007BFF";
-button.style.color = "white";
-button.style.border = "none";
-button.style.borderRadius = "5px";
-button.style.cursor = "pointer";
-button.style.zIndex = "1000";
+async function downloadUOVData() {
+  const optionData = await fetchUOVData();
+
+  const optDataRaw = optionData.map((obj) => obj.raw);
+  const df = processUOV(optDataRaw);
+  downloadCSV(df, `UOV_${getFormattedDate()}.csv`);
+}
+
+function createStyledButton(text, rightOffset) {
+  const btn = document.createElement("button");
+  btn.textContent = text;
+  btn.style.position = "fixed";
+  btn.style.bottom = "20px";
+  btn.style.right = rightOffset + "px";
+  btn.style.padding = "10px 20px";
+  btn.style.backgroundColor = "#007BFF";
+  btn.style.color = "white";
+  btn.style.border = "none";
+  btn.style.borderRadius = "5px";
+  btn.style.cursor = "pointer";
+  btn.style.zIndex = "1000";
+  return btn;
+}
+
+const uoaButton = createStyledButton("UOA", 20);
+const uovButton = createStyledButton("UOV", 100);
 
 // Add click event to the button
-button.addEventListener("click", getData);
+uoaButton.addEventListener("click", downloadUOAData);
+uovButton.addEventListener("click", downloadUOVData);
 
 // Append the button to the document body
-document.body.appendChild(button);
+document.body.appendChild(uoaButton);
+document.body.appendChild(uovButton);
