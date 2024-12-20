@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name         Fetch Data From Barchart
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Fetch and log data from API
 // @author       You
-// @require      https://cdn.jsdelivr.net/npm/danfojs@1.1.2/lib/bundle.min.js
 // @match        https://www.barchart.com/*
 // @grant        GM_download
 
@@ -63,23 +62,7 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const todayDate = getFormattedDate();
-  const UOA = `
-https://www.barchart.com/proxies/core-api/v1/options/get?
-fields=symbol,baseSymbol,baseLastPrice,baseSymbolType,symbolType,strikePrice,expirationDate,daysToExpiration,bidPrice,midpoint,askPrice,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime,symbolCode
-&orderBy=volumeOpenInterestRatio
-&orderDir=desc
-&baseSymbolTypes=stock
-&between(volumeOpenInterestRatio,1.24,)
-&between(lastPrice,.10,)
-&between(tradeTime,2023-12-10,${todayDate})
-&between(volume,500,)
-&between(openInterest,100,)
-&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))
-&meta=field.shortName,field.type,field.description
-&page=${page}
-&limit=1000
-&raw=1`;
+  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,bidPrice,midpoint,askPrice,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&page=${page}&limit=1000&raw=1`;
 
   const headers = createHeaders();
   headers.append(
@@ -128,64 +111,14 @@ async function fetchUOVData() {
   }
 }
 
-function processUOA(objList) {
-  let df = new dfd.DataFrame(objList);
-  df = df.drop({
-    columns: [
-      "baseSymbol",
-      "expirationDate",
-      "symbolType",
-      "baseSymbolType",
-      "strikePrice",
-    ],
+function downloadJSON(jsonFile, fileName) {
+  const blob = new Blob([JSON.stringify(jsonFile, null, 2)], {
+    type: "application/json",
   });
-  df = df.addColumn("delta_abs", df["delta"].abs());
-  df = df.addColumn(
-    "tradeDate",
-    df["tradeTime"].apply((tradeTime) => {
-      // Convert UNIX timestamp to milliseconds
-      let date = new Date(tradeTime * 1000);
-      // Convert to EST timezone
-      let estDate = new Date(
-        date.toLocaleString("en-US", { timeZone: "America/New_York" })
-      );
-      // Format to 'yyyy-mm-dd'
-      let estDateString = estDate.toISOString().split("T")[0];
+  const blobUrl = URL.createObjectURL(blob);
 
-      return estDateString;
-    })
-  );
-
-  // Add 'premium' column calculated as midpoint * 100 * volume
-  df = df.addColumn("premium", df["midpoint"].mul(100).mul(df["volume"]));
-
-  // Filter the DataFrame based on the specified conditions
-  df = df.query(
-    df["daysToExpiration"]
-      .gt(90)
-      .and(df["volumeOpenInterestRatio"].ge(15))
-      .and(df["premium"].ge(1e6 * 0.5))
-  );
-
-  // Convert 'premium' values into string format "xx.xx B" for billions
-  df.addColumn(
-    "premium_str",
-    df["premium"].apply((premium) => {
-      let premiumInBillions = premium / 1e6;
-      return premiumInBillions.toFixed(2) + " B";
-    }),
-    { inplace: true }
-  );
-
-  df.sortValues("premium", { ascending: false, inplace: true });
-
-  return df;
-}
-
-function downloadCSV(dataFrame, fileName) {
-  const csvContent = dfd.toCSV(dataFrame); // Convert DataFrame to CSV
   GM_download({
-    url: `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`,
+    url: blobUrl, // Use the Blob URL
     name: fileName,
     onerror: function (error) {
       console.error("Error downloading " + fileName, error);
@@ -195,34 +128,10 @@ function downloadCSV(dataFrame, fileName) {
     },
     onload: function () {
       console.log("Successfully downloaded " + fileName);
+      // Revoke the Blob URL to free up memory
+      URL.revokeObjectURL(blobUrl);
     },
   });
-}
-
-function processUOV(objList) {
-  let df = new dfd.DataFrame(objList);
-  df = df.drop({
-    columns: ["symbolShortName", "symbolCode", "symbolType", "hasOptions"],
-  });
-
-  // Calculate ratio
-  df = df.addColumn(
-    "optionsCallPutVolumeRatio",
-    df.column("optionsCallVolume").div(df.column("optionsPutVolume").add(1))
-  );
-
-  // Filter based on conditions
-  df = df.query(
-    df["optionsTotalVolumePercentChange1m"]
-      .gt(1)
-      .and(
-        df["optionsPutCallVolumeRatio"]
-          .gt(80)
-          .or(df["optionsCallPutVolumeRatio"].gt(80))
-      )
-  );
-
-  return df;
 }
 
 async function downloadUOAData() {
@@ -233,16 +142,13 @@ async function downloadUOAData() {
   }
 
   const optDataRaw = optionData.map((obj) => obj.raw);
-  const df = processUOA(optDataRaw);
-  downloadCSV(df, `UOA_${getFormattedDate()}.csv`);
+  downloadJSON(optDataRaw, `UOA_${getFormattedDate()}.json`);
 }
 
 async function downloadUOVData() {
   const optionData = await fetchUOVData();
-
   const optDataRaw = optionData.map((obj) => obj.raw);
-  const df = processUOV(optDataRaw);
-  downloadCSV(df, `UOV_${getFormattedDate()}.csv`);
+  downloadJSON(optDataRaw, `UOV_${getFormattedDate()}.json`);
 }
 
 function createStyledButton(text, rightOffset) {
