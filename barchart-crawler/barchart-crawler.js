@@ -62,7 +62,7 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,bidPrice,midpoint,askPrice,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&page=${page}&limit=1000&raw=1`;
+  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,lastPrice,volume,openInterest,volumeOpenInterestRatio,tradeCondition,label,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&page=${page}&limit=1000&raw=1`;
 
   const headers = createHeaders();
   headers.append(
@@ -87,7 +87,7 @@ async function fetchUOAData(page) {
 
 async function fetchUOVData() {
   const UOV =
-    "https://www.barchart.com/proxies/core-api/v1/quotes/get?list=options.mostActive.us&fields=symbol%2CsymbolShortName%2ClastPrice%2CpriceChange%2CpercentChange%2CoptionsTotalVolume%2CoptionsTotalOpenInterest%2CoptionsImpliedVolatilityRank1y%2CoptionsTotalVolumePercentChange1m%2CoptionsCallVolume%2CoptionsPutVolume%2CoptionsPutCallVolumeRatio%2CsymbolCode%2CsymbolType%2ChasOptions&between(lastPrice%2C.10%2C)=&gt(volatility%2C100)=&orderBy=optionsTotalVolumePercentChange1m&orderDir=desc&limit=1000&meta=field.shortName%2Cfield.type%2Cfield.description%2Clists.lastUpdate&hasOptions=true&raw=1";
+    "https://www.barchart.com/proxies/core-api/v1/quotes/get?list=options.mostActive.us&fields=symbol,symbolShortName,marketCap,lastPrice,priceChange,percentChange,optionsTotalVolume,optionsTotalOpenInterest,optionsImpliedVolatilityRank1y,optionsTotalVolumePercentChange1m,optionsCallVolume,optionsPutVolume,optionsPutCallVolumeRatio&between(lastPrice,.10,)=&gt(volatility,100)=&orderBy=optionsTotalVolumePercentChange1m&orderDir=desc&limit=1000&meta=field.shortName,field.type,field.description,lists.lastUpdate&hasOptions=true&raw=1";
 
   const headers = createHeaders();
   headers.append(
