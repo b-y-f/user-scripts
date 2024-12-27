@@ -62,7 +62,7 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,lastPrice,volume,openInterest,volumeOpenInterestRatio,tradeCondition,label,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&page=${page}&limit=1000&raw=1`;
+  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,lastPrice,volume,openInterest,volumeOpenInterestRatio,tradeCondition,label,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
 
   const headers = createHeaders();
   headers.append(
@@ -77,6 +77,27 @@ async function fetchUOAData(page) {
 
   try {
     const response = await fetch(UOA, requestOptions);
+    const result = await response.json();
+    const data = result.data;
+    return data;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function fetchOFData(page) {
+  const OF = `https://www.barchart.com/proxies/core-api/v1/options/flow?symbols=&fields=symbol,baseSymbol,lastPrice,symbolType,strikePrice,expiration,dte,tradePrice,tradeSize,side,premium,volume,openInterest,volatility,delta,tradeCondition,label,tradeTime,expirationType,baseSymbolType,symbolCode&orderBy=premium&orderDir=desc&in(baseSymbolType,(1))=&in(symbolType,(Call,Put))=&in(expirationType,(Monthly,Weekly))=&limit=1000&page=${page}&gt(tradeSize,100)=&raw=1`;
+
+  const headers = createHeaders();
+  headers.append("referer", "https://www.barchart.com/options/options-flow/stocks");
+  const requestOptions = {
+    method: "GET",
+    headers: headers,
+    redirect: "follow",
+  };
+
+  try {
+    const response = await fetch(OF, requestOptions);
     const result = await response.json();
     const data = result.data;
     return data;
@@ -145,6 +166,17 @@ async function downloadUOAData() {
   downloadJSON(optDataRaw, `UOA_${getFormattedDate()}.json`);
 }
 
+async function downloadOFData() {
+  const optionData = [];
+  for (let i = 1; i <= 2; i++) {
+    const data = await fetchOFData(i);
+    optionData.push(...data);
+  }
+
+  const optDataRaw = optionData.map((obj) => obj.raw);
+  downloadJSON(optDataRaw, `OF_${getFormattedDate()}.json`);
+}
+
 async function downloadUOVData() {
   const optionData = await fetchUOVData();
   const optDataRaw = optionData.map((obj) => obj.raw);
@@ -169,11 +201,14 @@ function createStyledButton(text, rightOffset) {
 
 const uoaButton = createStyledButton("UOA", 20);
 const uovButton = createStyledButton("UOV", 100);
+const ofButton = createStyledButton("OF", 180);
 
 // Add click event to the button
 uoaButton.addEventListener("click", downloadUOAData);
 uovButton.addEventListener("click", downloadUOVData);
+ofButton.addEventListener("click", downloadOFData);
 
 // Append the button to the document body
 document.body.appendChild(uoaButton);
 document.body.appendChild(uovButton);
+document.body.appendChild(ofButton);
