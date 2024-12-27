@@ -78,8 +78,7 @@ async function fetchUOAData(page) {
   try {
     const response = await fetch(UOA, requestOptions);
     const result = await response.json();
-    const data = result.data;
-    return data;
+    return result;
   } catch (error) {
     console.error(error);
   }
@@ -89,7 +88,10 @@ async function fetchOFData(page) {
   const OF = `https://www.barchart.com/proxies/core-api/v1/options/flow?symbols=&fields=symbol,baseSymbol,lastPrice,symbolType,strikePrice,expiration,dte,tradePrice,tradeSize,side,premium,volume,openInterest,volatility,delta,tradeCondition,label,tradeTime,expirationType,baseSymbolType,symbolCode&orderBy=premium&orderDir=desc&in(baseSymbolType,(1))=&in(symbolType,(Call,Put))=&in(expirationType,(Monthly,Weekly))=&limit=1000&page=${page}&gt(tradeSize,100)=&raw=1`;
 
   const headers = createHeaders();
-  headers.append("referer", "https://www.barchart.com/options/options-flow/stocks");
+  headers.append(
+    "referer",
+    "https://www.barchart.com/options/options-flow/stocks"
+  );
   const requestOptions = {
     method: "GET",
     headers: headers,
@@ -99,8 +101,7 @@ async function fetchOFData(page) {
   try {
     const response = await fetch(OF, requestOptions);
     const result = await response.json();
-    const data = result.data;
-    return data;
+    return result;
   } catch (error) {
     console.error(error);
   }
@@ -124,9 +125,7 @@ async function fetchUOVData() {
   try {
     const response = await fetch(UOV, requestOptions);
     const result = await response.json();
-    const data = result.data;
-
-    return data;
+    return result;
   } catch (error) {
     console.error(error);
   }
@@ -155,32 +154,59 @@ function downloadJSON(jsonFile, fileName) {
   });
 }
 
-async function downloadUOAData() {
-  const optionData = [];
-  for (let i = 1; i <= 2; i++) {
-    const data = await fetchUOAData(i);
-    optionData.push(...data);
+async function downloadData(dataSource) {
+  let result;
+  // Fetch data based on the dataSource
+  switch (dataSource) {
+    case "OF":
+      result = await fetchOFData(1);
+      break;
+    case "UOA":
+      result = await fetchUOAData(1);
+      break;
+    case "UOV":
+      result = await fetchUOVData(1);
+      break;
+    default:
+      console.error("Invalid dataSource");
+      return;
   }
 
-  const optDataRaw = optionData.map((obj) => obj.raw);
-  downloadJSON(optDataRaw, `UOA_${getFormattedDate()}.json`);
-}
-
-async function downloadOFData() {
-  const optionData = [];
-  for (let i = 1; i <= 2; i++) {
-    const data = await fetchOFData(i);
-    optionData.push(...data);
+  // Ensure we handle the result safely
+  if (!result || !result.total || !Array.isArray(result.data)) {
+    console.error("Invalid result from data fetch");
+    return;
   }
 
-  const optDataRaw = optionData.map((obj) => obj.raw);
-  downloadJSON(optDataRaw, `OF_${getFormattedDate()}.json`);
-}
+  // Limit pages to avoid too many requests, maximum is 10
+  const pages = Math.min(10, Math.ceil(result.total / 1000));
+  const optionData = [...result.data];
 
-async function downloadUOVData() {
-  const optionData = await fetchUOVData();
+  for (let i = 2; i <= pages; i++) {
+    let nextResult;
+    switch (dataSource) {
+      case "OF":
+        nextResult = await fetchOFData(i);
+        break;
+      case "UOA":
+        nextResult = await fetchUOAData(i);
+        break;
+      case "UOV":
+        nextResult = await fetchUOVData(i);
+        break;
+    }
+
+    if (nextResult && Array.isArray(nextResult.data)) {
+      optionData.push(...nextResult.data);
+    } else {
+      console.warn(`No data fetched for page ${i}`);
+      break;
+    }
+  }
+
+  // Extract raw data and download as JSON
   const optDataRaw = optionData.map((obj) => obj.raw);
-  downloadJSON(optDataRaw, `UOV_${getFormattedDate()}.json`);
+  downloadJSON(optDataRaw, `${dataSource}_${getFormattedDate()}.json`);
 }
 
 function createStyledButton(text, rightOffset) {
@@ -204,9 +230,9 @@ const uovButton = createStyledButton("UOV", 100);
 const ofButton = createStyledButton("OF", 180);
 
 // Add click event to the button
-uoaButton.addEventListener("click", downloadUOAData);
-uovButton.addEventListener("click", downloadUOVData);
-ofButton.addEventListener("click", downloadOFData);
+uoaButton.addEventListener("click", () => downloadData("UOA"));
+uovButton.addEventListener("click", () => downloadData("UOV"));
+ofButton.addEventListener("click", () => downloadData("OF"));
 
 // Append the button to the document body
 document.body.appendChild(uoaButton);
