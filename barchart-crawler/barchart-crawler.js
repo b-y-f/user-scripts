@@ -45,6 +45,19 @@ function getFormattedDate() {
 
   return `${year}-${month}-${day}`;
 }
+ 
+
+function getFormattedDateInEST() {
+  const today = new Date();
+
+  // Convert to EST
+  const options = { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" };
+  const estDate = new Intl.DateTimeFormat("en-US", options).format(today);
+
+  // Reformat the date to YYYY-MM-DD
+  const [month, day, year] = estDate.split("/");
+  return `${year}-${month}-${day}`;
+}
 
 function getCookieValue(cookieName) {
   const name = cookieName + "=";
@@ -62,7 +75,7 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,lastPrice,volume,openInterest,volumeOpenInterestRatio,tradeCondition,label,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
+  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
 
   const headers = createHeaders();
   headers.append(
@@ -206,7 +219,7 @@ async function downloadData(dataSource) {
 
   // Extract raw data and download as JSON
   const optDataRaw = optionData.map((obj) => obj.raw);
-  downloadJSON(optDataRaw, `${dataSource}_${getFormattedDate()}.json`);
+  downloadJSON(optDataRaw, `${dataSource}_${getFormattedDateInEST()}.json`);
 }
 
 function createStyledButton(text, rightOffset) {
