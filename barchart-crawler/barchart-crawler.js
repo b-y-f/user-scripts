@@ -238,16 +238,17 @@ function createStyledButton(text, rightOffset) {
   return btn;
 }
 
-const uoaButton = createStyledButton("UOA", 20);
-const uovButton = createStyledButton("UOV", 100);
-const ofButton = createStyledButton("OF", 180);
+// const uoaButton = createStyledButton("UOA", 20);
+// const uovButton = createStyledButton("UOV", 100);
+// const ofButton = createStyledButton("OF", 180);
 
-// Add click event to the button
-uoaButton.addEventListener("click", () => downloadData("UOA"));
-uovButton.addEventListener("click", () => downloadData("UOV"));
-ofButton.addEventListener("click", () => downloadData("OF"));
+// Create a single button
+const combinedButton = createStyledButton("UOA,OF", 180);
+// Add click event that handles both downloads
+combinedButton.addEventListener("click", () => {
+    downloadData("UOA");
+    downloadData("OF");
+});
 
-// Append the button to the document body
-document.body.appendChild(uoaButton);
-document.body.appendChild(uovButton);
-document.body.appendChild(ofButton);
+// Append the single button to the document body
+document.body.appendChild(combinedButton);
