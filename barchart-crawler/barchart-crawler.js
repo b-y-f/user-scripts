@@ -75,13 +75,15 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const UOA = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
+  const UOA_stock = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
+  const UOA_etf = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=etf&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
 
   const headers = createHeaders();
   headers.append(
     "referer",
-    "https://www.barchart.com/options/unusual-activity/stocks"
+    "https://www.barchart.com/options/unusual-activity/"
   );
+
   const requestOptions = {
     method: "GET",
     headers: headers,
@@ -89,11 +91,27 @@ async function fetchUOAData(page) {
   };
 
   try {
-    const response = await fetch(UOA, requestOptions);
-    const result = await response.json();
-    return result;
+    // Fetch both URLs concurrently
+    const [stockResponse, etfResponse] = await Promise.all([
+      fetch(UOA_stock, requestOptions),
+      fetch(UOA_etf, requestOptions)
+    ]);
+
+    // Parse both responses
+    const stockData = await stockResponse.json();
+    const etfData = await etfResponse.json();
+
+    // Merge the data arrays
+    // Assuming the actual data is in a 'data' property
+    const mergedData = {
+      ...stockData,
+      data: [...(stockData.data || []), ...(etfData.data || [])]
+    };
+
+    return mergedData;
   } catch (error) {
     console.error(error);
+    throw error;
   }
 }
 
@@ -247,7 +265,7 @@ const combinedButton = createStyledButton("UOA,OF", 180);
 // Add click event that handles both downloads
 combinedButton.addEventListener("click", () => {
     downloadData("UOA");
-    downloadData("OF");
+    // downloadData("OF");
 });
 
 // Append the single button to the document body
