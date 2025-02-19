@@ -45,7 +45,7 @@ function getFormattedDate() {
 
   return `${year}-${month}-${day}`;
 }
- 
+
 
 function getFormattedDateInEST() {
   const today = new Date();
@@ -265,7 +265,7 @@ const combinedButton = createStyledButton("UOA,OF", 180);
 // Add click event that handles both downloads
 combinedButton.addEventListener("click", () => {
     downloadData("UOA");
-    // downloadData("OF");
+    downloadData("OF");
 });
 
 // Append the single button to the document body
