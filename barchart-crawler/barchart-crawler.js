@@ -13,7 +13,8 @@ function createHeaders() {
   const myHeader = new Headers();
   myHeader.append("accept", "application/json");
   myHeader.append("accept-language", "en,en-CN;q=0.9,zh-CN;q=0.8,zh;q=0.7");
-  myHeader.append("cookie", getCookie());
+  const cookieValue = encodeURIComponent(getCookie());
+  myHeader.append("cookie", cookieValue);
   myHeader.append("dnt", "1");
   myHeader.append("priority", "u=1, i");
   myHeader.append(
