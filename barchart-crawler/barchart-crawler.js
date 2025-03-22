@@ -164,26 +164,18 @@ async function fetchUOVData() {
 }
 
 function downloadJSON(jsonFile, fileName) {
-  const blob = new Blob([JSON.stringify(jsonFile, null, 2)], {
-    type: "application/json",
-  });
+  const blob = new Blob([JSON.stringify(jsonFile, null, 2)], { type: "application/json" });
   const blobUrl = URL.createObjectURL(blob);
 
-  GM_download({
-    url: blobUrl, // Use the Blob URL
-    name: fileName,
-    onerror: function (error) {
-      console.error("Error downloading " + fileName, error);
-    },
-    ontimeout: function () {
-      console.error("Timeout downloading " + fileName);
-    },
-    onload: function () {
-      console.log("Successfully downloaded " + fileName);
-      // Revoke the Blob URL to free up memory
-      URL.revokeObjectURL(blobUrl);
-    },
-  });
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Revoke the object URL to free memory
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 async function downloadData(dataSource) {
