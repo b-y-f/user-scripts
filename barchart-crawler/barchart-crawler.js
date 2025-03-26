@@ -76,8 +76,8 @@ function getCookieValue(cookieName) {
 }
 
 async function fetchUOAData(page) {
-  const UOA_stock = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
-  const UOA_etf = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=etf&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=1000&page=${page}&raw=1`;
+  const UOA_stock = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=500&page=${page}&raw=1`;
+  const UOA_etf = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=etf&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=500&page=${page}&raw=1`;
 
   const headers = createHeaders();
   headers.append(
@@ -164,26 +164,18 @@ async function fetchUOVData() {
 }
 
 function downloadJSON(jsonFile, fileName) {
-  const blob = new Blob([JSON.stringify(jsonFile, null, 2)], {
-    type: "application/json",
-  });
+  const blob = new Blob([JSON.stringify(jsonFile, null, 2)], { type: "application/json" });
   const blobUrl = URL.createObjectURL(blob);
 
-  GM_download({
-    url: blobUrl, // Use the Blob URL
-    name: fileName,
-    onerror: function (error) {
-      console.error("Error downloading " + fileName, error);
-    },
-    ontimeout: function () {
-      console.error("Timeout downloading " + fileName);
-    },
-    onload: function () {
-      console.log("Successfully downloaded " + fileName);
-      // Revoke the Blob URL to free up memory
-      URL.revokeObjectURL(blobUrl);
-    },
-  });
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  // Revoke the object URL to free memory
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 async function downloadData(dataSource) {
@@ -211,7 +203,7 @@ async function downloadData(dataSource) {
   }
 
   // Limit pages to avoid too many requests, maximum is 10
-  const pages = Math.min(10, Math.ceil(result.total / 1000));
+  const pages = Math.min(10, Math.ceil(result.total /result.count));
   const optionData = [...result.data];
 
   for (let i = 2; i <= pages; i++) {
@@ -257,17 +249,21 @@ function createStyledButton(text, rightOffset) {
   return btn;
 }
 
-// const uoaButton = createStyledButton("UOA", 20);
+const uoaButton = createStyledButton("UOA", 20);
 // const uovButton = createStyledButton("UOV", 100);
-// const ofButton = createStyledButton("OF", 180);
+const ofButton = createStyledButton("OF", 180);
 
 // Create a single button
-const combinedButton = createStyledButton("UOA,OF", 180);
+//const combinedButton = createStyledButton("UOA,OF", 180);
 // Add click event that handles both downloads
-combinedButton.addEventListener("click", () => {
+uoaButton.addEventListener("click", () => {
     downloadData("UOA");
+});
+
+ofButton.addEventListener("click", () => {
     downloadData("OF");
 });
 
 // Append the single button to the document body
-document.body.appendChild(combinedButton);
+document.body.appendChild(uoaButton);
+document.body.appendChild(ofButton);
