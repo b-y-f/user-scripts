@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.4
+// @version         1.3.5
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -103,7 +103,7 @@ function decrypt(t) {
   ).toString(CryptoJS.enc.Utf8);
 }
 
-async function fetchUrl(apiUrl) {
+async function fetchAudioUrl(apiUrl) {
   try {
     const data = await fetchUntilSuccess(apiUrl);
     if (data.ret === 1001) {
@@ -111,22 +111,10 @@ async function fetchUrl(apiUrl) {
         "Rate limited!!! Wait for a while then download again..."
       );
     }
-    const bestAudioUrl = data.trackInfo.playUrlList[0].url;
-    return bestAudioUrl;
+    const audioQualities = data.trackInfo.playUrlList;
+    return audioQualities;
   } catch (error) {
     console.error("Error fetching the URL:", error);
-    throw error;
-  }
-}
-
-async function getTrueUrl(title, url) {
-  try {
-    const fetchedUrl = await fetchUrl(url);
-    const trueUrl = decrypt(fetchedUrl);
-    const fileName = `${title}.m4a`;
-    return { fileName, trueUrl };
-  } catch (error) {
-    console.error("Error getting the true url:", error);
     throw error;
   }
 }
@@ -151,11 +139,12 @@ function initializeUI() {
   container.style.zIndex = 1000;
   container.style.display = "flex";
   container.style.alignItems = "center";
+  container.style.backgroundColor = "white";
+  container.style.padding = "5px";
   document.body.appendChild(container);
 
   const button = document.createElement("button");
   button.textContent = "解析ID";
-  button.style.marginLeft = "10px";
   container.appendChild(button);
 
   button.addEventListener("click", async function parseIds() {
@@ -168,26 +157,68 @@ function initializeUI() {
     button.removeEventListener("click", parseIds);
     button.addEventListener("click", async function parseUrls() {
       progressDisplay.textContent = "URL解析进行中...";
+      // TODO
       let finalDownloadList = [];
       for (let index = 0; index < tracks.length; index++) {
         const t = tracks[index];
-        const item = await getTrueUrl(t.title, t.url, index);
-        finalDownloadList.push(item);
+        const audioQualities = await fetchAudioUrl(t.url)
+        finalDownloadList.push({ title: t.title, audioQualities });
         progressDisplay.textContent = `解析进程: ${index} / ${tracks.length}`;
+
       }
 
-      console.log(finalDownloadList);
+      console.log("Before set audio quality\n", finalDownloadList);
 
       if (finalDownloadList.length > 0) {
         progressDisplay.textContent = "URL解析完成。";
+
+        // Create quality selection dropdown
+        const qualityLabel = document.createElement("label");
+        qualityLabel.htmlFor = "qualitySelect";
+        qualityLabel.textContent = "音质: ";
+        qualityLabel.style.marginRight = "5px";
+        container.appendChild(qualityLabel);
+
+        const qualitySelect = document.createElement("select");
+        qualitySelect.id = "qualitySelect";
+        qualitySelect.style.marginRight = "30px";
+
+        // Get available quality types from the first item
+        const availableQualities = finalDownloadList[0]['audioQualities'];
+        availableQualities.forEach((quality, index) => {
+          const option = document.createElement("option");
+          option.value = index;
+          option.textContent = `${quality.type} (${(quality.fileSize / 1024 / 1024).toFixed(2)}MB)`;
+          qualitySelect.appendChild(option);
+        });
+
+        container.appendChild(qualitySelect);
+
+        // Variable to store selected quality index
+        let selectedQualityIndex = 0;
+        qualitySelect.addEventListener("change", (e) => {
+          selectedQualityIndex = parseInt(e.target.value);
+        });
+        const selectedQualityType = availableQualities[selectedQualityIndex].type;
+
+        finalDownloadList = finalDownloadList.map((item) => {
+          return {
+            ...item,
+            trueUrl: decrypt(item.audioQualities[selectedQualityIndex].url),
+            fileName: `${item.title}.${selectedQualityType.split("_")[0]}`
+          };
+        });
+
+        console.log("After decrypt url\n", finalDownloadList);
+
         button.textContent = "下载";
+        button.style.marginRight = "30px";
 
         // Create the checkbox
         const label = document.createElement("label");
         label.htmlFor = "sequenceOrder";
-        label.textContent = "加序号";
-        label.style.marginLeft = "5px";
-        label.style.backgroundColor = "white";
+        label.textContent = "加序号: ";
+        label.style.marginRight = "5px";
         container.appendChild(label);
         const seqNumberCheckbox = document.createElement("input");
         seqNumberCheckbox.type = "checkbox";
