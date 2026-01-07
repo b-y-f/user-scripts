@@ -207,14 +207,21 @@ async function downloadOptionsFlowData(sourceKeys = Object.keys(OPTIONS_FLOW_SOU
   // Fetch all sources in parallel
   const results = await Promise.all(fetchPromises);
 
-  // Download each source's data
+  // Merge all data into one array
+  const allData = [];
   for (const { key, data } of results) {
     if (data.length > 0) {
       const config = OPTIONS_FLOW_SOURCES[key];
       const rawData = data.map(obj => obj.raw);
-      downloadJSON(rawData, `${config.filePrefix}_${getFormattedDateInEST()}.json`);
-      console.log(`Downloaded ${data.length} records for ${config.name}`);
+      allData.push(...rawData);
+      console.log(`Fetched ${data.length} records for ${config.name}`);
     }
+  }
+
+  // Download combined data as a single file
+  if (allData.length > 0) {
+    downloadJSON(allData, `OF_${getFormattedDateInEST()}.json`);
+    console.log(`Downloaded ${allData.length} total records`);
   }
 }
 
