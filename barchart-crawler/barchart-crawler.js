@@ -128,6 +128,7 @@ function createOptionsFlowFetcher(sourceConfig) {
       `in(expirationType,(Monthly,Weekly))=&` +
       `limit=1000&page=${page}&` +
       `gt(tradeSize,100)=&` +
+      `gt(premium,100000)=&` +
       `meta=field.shortName,field.type,field.description&` +
       `raw=1`;
 
