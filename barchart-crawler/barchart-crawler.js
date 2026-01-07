@@ -1,63 +1,73 @@
 // ==UserScript==
 // @name         Fetch Data From Barchart
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Fetch and log data from API
+// @version      2.0
+// @description  Fetch and log options flow data from API
 // @author       You
 // @match        https://www.barchart.com/*
 // @grant        GM_download
-
 // ==/UserScript==
 
-function createHeaders() {
-  const myHeader = new Headers();
-  myHeader.append("accept", "application/json");
-  myHeader.append("accept-language", "en,en-CN;q=0.9,zh-CN;q=0.8,zh;q=0.7");
-  const cookieValue = encodeURIComponent(getCookie());
-  myHeader.append("cookie", cookieValue);
-  myHeader.append("dnt", "1");
-  myHeader.append("priority", "u=1, i");
-  myHeader.append(
-    "sec-ch-ua",
-    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"'
-  );
-  myHeader.append("sec-ch-ua-mobile", "?0");
-  myHeader.append("sec-ch-ua-platform", '"Windows"');
-  myHeader.append("sec-fetch-dest", "empty");
-  myHeader.append("sec-fetch-mode", "cors");
-  myHeader.append("sec-fetch-site", "same-origin");
-  myHeader.append(
-    "user-agent",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-  );
-  myHeader.append("x-xsrf-token", getCookieValue("XSRF-TOKEN"));
-  return myHeader;
-}
+// ============================================================================
+// Data Source Configurations
+// ============================================================================
+
+const OPTIONS_FLOW_SOURCES = {
+  stock: {
+    name: "Stock",
+    baseSymbolType: 1,
+    referer: "https://www.barchart.com/options/options-flow/stocks",
+    filePrefix: "OF_Stock"
+  },
+  etf: {
+    name: "ETF",
+    baseSymbolType: 7,
+    referer: "https://www.barchart.com/options/options-flow/etfs",
+    filePrefix: "OF_ETF"
+  },
+  indices: {
+    name: "Indices",
+    baseSymbolType: 9,
+    referer: "https://www.barchart.com/options/options-flow/indices",
+    filePrefix: "OF_Indices"
+  }
+};
+
+// Common fields for all options flow sources
+const OPTIONS_FLOW_FIELDS = [
+  "symbol",
+  "baseSymbol",
+  "lastPrice",
+  "symbolType",
+  "strikePrice",
+  "expiration",
+  "dte",
+  "bidXSize",
+  "askXSize",
+  "tradePrice",
+  "tradeSize",
+  "side",
+  "premium",
+  "volume",
+  "openInterest",
+  "volatility",
+  "delta",
+  "tradeCondition",
+  "label",
+  "tradeTime.format(H:i:s%20%5CE%5CT)",
+  "expirationType",
+  "askPrice",
+  "bidPrice",
+  "baseSymbolType",
+  "symbolCode"
+].join(",");
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
 
 function getCookie() {
   return decodeURIComponent(document.cookie);
-}
-
-function getFormattedDate() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0"); // Months are zero-based
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-
-function getFormattedDateInEST() {
-  const today = new Date();
-
-  // Convert to EST
-  const options = { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" };
-  const estDate = new Intl.DateTimeFormat("en-US", options).format(today);
-
-  // Reformat the date to YYYY-MM-DD
-  const [month, day, year] = estDate.split("/");
-  return `${year}-${month}-${day}`;
 }
 
 function getCookieValue(cookieName) {
@@ -67,7 +77,6 @@ function getCookieValue(cookieName) {
 
   for (let i = 0; i < cookieArray.length; i++) {
     let cookie = cookieArray[i].trim();
-
     if (cookie.indexOf(name) === 0) {
       return cookie.substring(name.length, cookie.length);
     }
@@ -75,92 +84,97 @@ function getCookieValue(cookieName) {
   return null;
 }
 
-async function fetchUOAData(page) {
-  const UOA_stock = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=stock&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=500&page=${page}&raw=1`;
-  const UOA_etf = `https://www.barchart.com/proxies/core-api/v1/options/get?fields=symbol,marketCap,baseLastPrice,daysToExpiration,premium,midpoint,lastPrice,volume,openInterest,volumeOpenInterestRatio,volatility,delta,tradeTime&orderBy=volumeOpenInterestRatio&orderDir=desc&baseSymbolTypes=etf&between(volumeOpenInterestRatio,1.24,)=&between(lastPrice,.10,)=&between(tradeTime,2023-12-19,${getFormattedDate()})=&between(volume,500,)=&between(openInterest,100,)=&in(exchange,(AMEX,NYSE,NASDAQ,INDEX-CBOE))=&meta=field.shortName,field.type,field.description&limit=500&page=${page}&raw=1`;
+function getFormattedDateInEST() {
+  const today = new Date();
+  const options = { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" };
+  const estDate = new Intl.DateTimeFormat("en-US", options).format(today);
+  const [month, day, year] = estDate.split("/");
+  return `${year}-${month}-${day}`;
+}
 
-  const headers = createHeaders();
-  headers.append(
-    "referer",
-    "https://www.barchart.com/options/unusual-activity/"
-  );
+function createHeaders(referer) {
+  const myHeader = new Headers();
+  myHeader.append("accept", "application/json");
+  myHeader.append("accept-language", "en,en-CN;q=0.9,zh-CN;q=0.8,zh;q=0.7");
+  myHeader.append("cookie", encodeURIComponent(getCookie()));
+  myHeader.append("dnt", "1");
+  myHeader.append("priority", "u=1, i");
+  myHeader.append("sec-ch-ua", '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"');
+  myHeader.append("sec-ch-ua-mobile", "?0");
+  myHeader.append("sec-ch-ua-platform", '"Windows"');
+  myHeader.append("sec-fetch-dest", "empty");
+  myHeader.append("sec-fetch-mode", "cors");
+  myHeader.append("sec-fetch-site", "same-origin");
+  myHeader.append("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+  myHeader.append("x-xsrf-token", getCookieValue("XSRF-TOKEN"));
+  if (referer) {
+    myHeader.append("referer", referer);
+  }
+  return myHeader;
+}
 
-  const requestOptions = {
-    method: "GET",
-    headers: headers,
-    redirect: "follow",
-  };
+// ============================================================================
+// Generic Options Flow Fetcher
+// ============================================================================
 
-  try {
-    // Fetch both URLs concurrently
-    const [stockResponse, etfResponse] = await Promise.all([
-      fetch(UOA_stock, requestOptions),
-      fetch(UOA_etf, requestOptions)
-    ]);
+function createOptionsFlowFetcher(sourceConfig) {
+  return async function (page) {
+    const url = `https://www.barchart.com/proxies/core-api/v1/options/flow?` +
+      `symbols=&` +
+      `fields=${OPTIONS_FLOW_FIELDS}&` +
+      `orderBy=premium&orderDir=desc&` +
+      `in(baseSymbolType,(${sourceConfig.baseSymbolType}))=&` +
+      `in(symbolType,(Call,Put))=&` +
+      `in(expirationType,(Monthly,Weekly))=&` +
+      `limit=1000&page=${page}&` +
+      `gt(tradeSize,100)=&` +
+      `meta=field.shortName,field.type,field.description&` +
+      `raw=1`;
 
-    // Parse both responses
-    const stockData = await stockResponse.json();
-    const etfData = await etfResponse.json();
-
-    // Merge the data arrays
-    // Assuming the actual data is in a 'data' property
-    const mergedData = {
-      ...stockData,
-      data: [...(stockData.data || []), ...(etfData.data || [])]
+    const headers = createHeaders(sourceConfig.referer);
+    const requestOptions = {
+      method: "GET",
+      headers: headers,
+      redirect: "follow",
     };
 
-    return mergedData;
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
+    try {
+      const response = await fetch(url, requestOptions);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error fetching ${sourceConfig.name} data:`, error);
+      return null;
+    }
+  };
 }
 
-async function fetchOFData(page) {
-  const OF = `https://www.barchart.com/proxies/core-api/v1/options/flow?symbols=&fields=symbol,baseSymbol,lastPrice,symbolType,strikePrice,expiration,dte,tradePrice,tradeSize,side,premium,volume,openInterest,volatility,delta,tradeCondition,label,tradeTime,expirationType,baseSymbolType,symbolCode&orderBy=premium&orderDir=desc&in(baseSymbolType,(1))=&in(symbolType,(Call,Put))=&in(expirationType,(Monthly,Weekly))=&limit=1000&page=${page}&gt(tradeSize,100)=&raw=1`;
+// ============================================================================
+// Pagination & Download
+// ============================================================================
 
-  const headers = createHeaders();
-  headers.append(
-    "referer",
-    "https://www.barchart.com/options/options-flow/stocks"
-  );
-  const requestOptions = {
-    method: "GET",
-    headers: headers,
-    redirect: "follow",
-  };
+async function fetchAllPages(fetchFn, label) {
+  const result = await fetchFn(1);
 
-  try {
-    const response = await fetch(OF, requestOptions);
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error(error);
+  if (!result || !result.total || !Array.isArray(result.data)) {
+    console.error(`Invalid result from ${label} fetch`);
+    return [];
   }
-}
 
-async function fetchUOVData() {
-  const UOV =
-    "https://www.barchart.com/proxies/core-api/v1/quotes/get?list=options.mostActive.us&fields=symbol,symbolShortName,marketCap,lastPrice,priceChange,percentChange,optionsTotalVolume,optionsTotalOpenInterest,optionsImpliedVolatilityRank1y,optionsTotalVolumePercentChange1m,optionsCallVolume,optionsPutVolume,optionsPutCallVolumeRatio&between(lastPrice,.10,)=&gt(volatility,100)=&orderBy=optionsTotalVolumePercentChange1m&orderDir=desc&limit=1000&meta=field.shortName,field.type,field.description,lists.lastUpdate&hasOptions=true&raw=1";
+  // Limit pages to avoid too many requests, maximum is 10
+  const pages = Math.min(10, Math.ceil(result.total / result.count));
+  const optionData = [...result.data];
 
-  const headers = createHeaders();
-  headers.append(
-    "referer",
-    "https://www.barchart.com/options/volume-change/stocks?orderBy=optionsTotalVolumePercentChange1m&orderDir=desc"
-  );
-  const requestOptions = {
-    method: "GET",
-    headers: headers,
-    redirect: "follow",
-  };
-
-  try {
-    const response = await fetch(UOV, requestOptions);
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error(error);
+  for (let i = 2; i <= pages; i++) {
+    const nextResult = await fetchFn(i);
+    if (nextResult && Array.isArray(nextResult.data)) {
+      optionData.push(...nextResult.data);
+    } else {
+      console.warn(`No data fetched for ${label} page ${i}`);
+      break;
+    }
   }
+
+  return optionData;
 }
 
 function downloadJSON(jsonFile, fileName) {
@@ -174,64 +188,38 @@ function downloadJSON(jsonFile, fileName) {
   a.click();
   document.body.removeChild(a);
 
-  // Revoke the object URL to free memory
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
-async function downloadData(dataSource) {
-  let result;
-  // Fetch data based on the dataSource
-  switch (dataSource) {
-    case "OF":
-      result = await fetchOFData(1);
-      break;
-    case "UOA":
-      result = await fetchUOAData(1);
-      break;
-    case "UOV":
-      result = await fetchUOVData(1);
-      break;
-    default:
-      console.error("Invalid dataSource");
-      return;
-  }
-
-  // Ensure we handle the result safely
-  if (!result || !result.total || !Array.isArray(result.data)) {
-    console.error("Invalid result from data fetch");
-    return;
-  }
-
-  // Limit pages to avoid too many requests, maximum is 10
-  const pages = Math.min(10, Math.ceil(result.total /result.count));
-  const optionData = [...result.data];
-
-  for (let i = 2; i <= pages; i++) {
-    let nextResult;
-    switch (dataSource) {
-      case "OF":
-        nextResult = await fetchOFData(i);
-        break;
-      case "UOA":
-        nextResult = await fetchUOAData(i);
-        break;
-      case "UOV":
-        nextResult = await fetchUOVData(i);
-        break;
+async function downloadOptionsFlowData(sourceKeys = Object.keys(OPTIONS_FLOW_SOURCES)) {
+  // Create fetchers for each source
+  const fetchPromises = sourceKeys.map(key => {
+    const config = OPTIONS_FLOW_SOURCES[key];
+    if (!config) {
+      console.warn(`Unknown source: ${key}`);
+      return Promise.resolve({ key, data: [] });
     }
+    const fetcher = createOptionsFlowFetcher(config);
+    return fetchAllPages(fetcher, config.name).then(data => ({ key, data }));
+  });
 
-    if (nextResult && Array.isArray(nextResult.data)) {
-      optionData.push(...nextResult.data);
-    } else {
-      console.warn(`No data fetched for page ${i}`);
-      break;
+  // Fetch all sources in parallel
+  const results = await Promise.all(fetchPromises);
+
+  // Download each source's data
+  for (const { key, data } of results) {
+    if (data.length > 0) {
+      const config = OPTIONS_FLOW_SOURCES[key];
+      const rawData = data.map(obj => obj.raw);
+      downloadJSON(rawData, `${config.filePrefix}_${getFormattedDateInEST()}.json`);
+      console.log(`Downloaded ${data.length} records for ${config.name}`);
     }
   }
-
-  // Extract raw data and download as JSON
-  const optDataRaw = optionData.map((obj) => obj.raw);
-  downloadJSON(optDataRaw, `${dataSource}_${getFormattedDateInEST()}.json`);
 }
+
+// ============================================================================
+// UI
+// ============================================================================
 
 function createStyledButton(text, rightOffset) {
   const btn = document.createElement("button");
@@ -249,21 +237,10 @@ function createStyledButton(text, rightOffset) {
   return btn;
 }
 
-const uoaButton = createStyledButton("UOA", 20);
-// const uovButton = createStyledButton("UOV", 100);
-const ofButton = createStyledButton("OF", 180);
-
-// Create a single button
-//const combinedButton = createStyledButton("UOA,OF", 180);
-// Add click event that handles both downloads
-uoaButton.addEventListener("click", () => {
-    downloadData("UOA");
-});
-
+// Create button to download all options flow data
+const ofButton = createStyledButton("OF All", 180);
 ofButton.addEventListener("click", () => {
-    downloadData("OF");
+  downloadOptionsFlowData(); // Downloads stock, etf, and indices
 });
 
-// Append the single button to the document body
-document.body.appendChild(uoaButton);
 document.body.appendChild(ofButton);
