@@ -128,7 +128,7 @@ function createOptionsFlowFetcher(sourceConfig) {
       `in(expirationType,(Monthly,Weekly))=&` +
       `limit=1000&page=${page}&` +
       `gt(tradeSize,100)=&` +
-      `gt(premium,100000)=&` +
+      `gt(premium,10000)=&` +
       `meta=field.shortName,field.type,field.description&` +
       `raw=1`;
 
@@ -141,6 +141,7 @@ function createOptionsFlowFetcher(sourceConfig) {
 
     try {
       const response = await fetch(url, requestOptions);
+      if (response.status === 429) return { rateLimited: true };
       return await response.json();
     } catch (error) {
       console.error(`Error fetching ${sourceConfig.name} data:`, error);
@@ -153,20 +154,35 @@ function createOptionsFlowFetcher(sourceConfig) {
 // Pagination & Download
 // ============================================================================
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function fetchWithRetry(fetchFn, page, label) {
+  while (true) {
+    const result = await fetchFn(page);
+    if (result && result.rateLimited) {
+      console.warn(`${label} page ${page}: 429 rate limited, waiting 2 min...`);
+      await sleep(120000);
+      continue;
+    }
+    return result;
+  }
+}
+
 async function fetchAllPages(fetchFn, label) {
-  const result = await fetchFn(1);
+  const result = await fetchWithRetry(fetchFn, 1, label);
 
   if (!result || !result.total || !Array.isArray(result.data)) {
     console.error(`Invalid result from ${label} fetch`);
     return [];
   }
 
-  // Limit pages to avoid too many requests, maximum is 10
-  const pages = Math.min(10, Math.ceil(result.total / result.count));
+  console.log(`Expected total for ${label}: ${result.total}`);
+  
+  const pages = Math.ceil(result.total / result.count);
   const optionData = [...result.data];
 
   for (let i = 2; i <= pages; i++) {
-    const nextResult = await fetchFn(i);
+    const nextResult = await fetchWithRetry(fetchFn, i, label);
     if (nextResult && Array.isArray(nextResult.data)) {
       optionData.push(...nextResult.data);
     } else {
