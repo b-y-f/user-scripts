@@ -160,8 +160,8 @@ async function fetchWithRetry(fetchFn, page, label) {
   while (true) {
     const result = await fetchFn(page);
     if (result && result.rateLimited) {
-      console.warn(`${label} page ${page}: 429 rate limited, waiting 2 min...`);
-      await sleep(120000);
+      console.warn(`${label} page ${page}: 429 rate limited, waiting 3 min...`);
+      await sleep(3*60*1000);
       continue;
     }
     return result;
