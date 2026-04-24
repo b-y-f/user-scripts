@@ -126,8 +126,8 @@ function createOptionsFlowFetcher(sourceConfig) {
       `in(baseSymbolType,(${sourceConfig.baseSymbolType}))=&` +
       `in(symbolType,(Call,Put))=&` +
       `in(expirationType,(Monthly,Weekly))=&` +
-      `limit=1000&page=${page}&` +
-      `gt(tradeSize,100)=&` +
+      `page=${page}&` +
+      `gt(tradeSize,10)=&` +
       `gt(premium,10000)=&` +
       `meta=field.shortName,field.type,field.description&` +
       `raw=1`;
@@ -160,8 +160,8 @@ async function fetchWithRetry(fetchFn, page, label) {
   while (true) {
     const result = await fetchFn(page);
     if (result && result.rateLimited) {
-      console.warn(`${label} page ${page}: 429 rate limited, waiting 3 min...`);
-      await sleep(3*60*1000);
+      console.warn(`${label} page ${page}: 429 rate limited, waiting 2 min...`);
+      await sleep(120000);
       continue;
     }
     return result;
@@ -177,7 +177,7 @@ async function fetchAllPages(fetchFn, label) {
   }
 
   console.log(`Expected total for ${label}: ${result.total}`);
-  
+
   const pages = Math.ceil(result.total / result.count);
   const optionData = [...result.data];
 
