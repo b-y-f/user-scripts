@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.5
+// @version         1.3.6
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -46,11 +46,21 @@ async function getAllTrackIds() {
     return match ? match[1] : null;
   }
 
-  async function getTotalTrackCount() {
+  async function getAlbumInfo() {
     const albumId = getAlbumId();
     const apiUrl = `https://www.ximalaya.com/tdk-web/seo/search/albumInfo?albumId=${albumId}`;
     const data = await fetchUntilSuccess(apiUrl);
-    return data.data.trackCount;
+    const albumData = data.data || {};
+    return {
+      albumName:
+        albumData.albumTitle ||
+        albumData.title ||
+        albumData.mainTitle ||
+        albumData.albumName ||
+        albumData.name ||
+        "",
+      trackCount: albumData.trackCount,
+    };
   }
 
   async function fetchTracks(pages) {
@@ -83,11 +93,14 @@ async function getAllTrackIds() {
     return tracks;
   }
 
-  const totalTrackCount = await getTotalTrackCount();
-  const pages = Math.ceil(totalTrackCount / 30);
+  const albumInfo = await getAlbumInfo();
+  const pages = Math.ceil(albumInfo.trackCount / 30);
   const tracks = await fetchTracks(pages);
   console.log("raw tracks", tracks);
-  return extractTrackUrl(tracks);
+  return {
+    albumName: albumInfo.albumName,
+    tracks: extractTrackUrl(tracks),
+  };
 }
 
 function decrypt(t) {
@@ -117,6 +130,46 @@ async function fetchAudioUrl(apiUrl) {
     console.error("Error fetching the URL:", error);
     throw error;
   }
+}
+
+function sanitizeFileName(fileName) {
+  return String(fileName || "").replace(/[\\/:*?"<>|\r\n]+/g, "_").trim();
+}
+
+function buildDownloadList(
+  finalDownloadList,
+  selectedQualityIndex,
+  isSequenceOrder
+) {
+  return finalDownloadList.map((item, index) => {
+    const selectedQuality =
+      item.audioQualities[selectedQualityIndex] || item.audioQualities[0];
+    const fileType = selectedQuality.type.split("_")[0];
+    const fileName = sanitizeFileName(`${item.title}.${fileType}`);
+
+    return {
+      ...item,
+      trueUrl: decrypt(selectedQuality.url),
+      fileName: isSequenceOrder ? `${index}.${fileName}` : fileName,
+    };
+  });
+}
+
+function exportAria2Links(downloadList, albumName) {
+  const content = downloadList
+    .map((item) => `${item.trueUrl}\n  out=${item.fileName}`)
+    .join("\n\n");
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const link = document.createElement("a");
+  const objectUrl = URL.createObjectURL(blob);
+  const baseName = sanitizeFileName(albumName) || "links";
+
+  link.href = objectUrl;
+  link.download = `${baseName}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 function initializeUI() {
@@ -150,7 +203,9 @@ function initializeUI() {
   button.addEventListener("click", async function parseIds() {
     progressDisplay.style.display = "block";
     progressDisplay.textContent = "ID解析进行中...";
-    const tracks = await getAllTrackIds();
+    const album = await getAllTrackIds();
+    const albumName = album.albumName;
+    const tracks = album.tracks;
     progressDisplay.textContent = "ID解析完成";
     button.textContent = "解析URL";
 
@@ -199,20 +254,13 @@ function initializeUI() {
         qualitySelect.addEventListener("change", (e) => {
           selectedQualityIndex = parseInt(e.target.value);
         });
-        const selectedQualityType = availableQualities[selectedQualityIndex].type;
-
-        finalDownloadList = finalDownloadList.map((item) => {
-          return {
-            ...item,
-            trueUrl: decrypt(item.audioQualities[selectedQualityIndex].url),
-            fileName: `${item.title}.${selectedQualityType.split("_")[0]}`
-          };
-        });
-
-        console.log("After decrypt url\n", finalDownloadList);
-
         button.textContent = "下载";
-        button.style.marginRight = "30px";
+        button.style.marginRight = "5px";
+
+        const exportButton = document.createElement("button");
+        exportButton.textContent = "导出";
+        exportButton.style.marginRight = "30px";
+        container.insertBefore(exportButton, button.nextSibling);
 
         // Create the checkbox
         const label = document.createElement("label");
@@ -232,12 +280,16 @@ function initializeUI() {
         button.addEventListener("click", function downloadFiles() {
           let count = 0;
           progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
-          finalDownloadList.forEach((item, index) => {
+          const downloadList = buildDownloadList(
+            finalDownloadList,
+            selectedQualityIndex,
+            isSequenceOrder
+          );
+          console.log("After decrypt url\n", downloadList);
+          downloadList.forEach((item) => {
             GM_download({
               url: item.trueUrl,
-              name: isSequenceOrder
-                ? `${index}.${item.fileName}`
-                : `${item.fileName}`,
+              name: item.fileName,
               onerror: function (error) {
                 console.error("Error downloading " + item.fileName, error);
               },
@@ -251,6 +303,15 @@ function initializeUI() {
               },
             });
           });
+        });
+
+        exportButton.addEventListener("click", function exportLinks() {
+          const downloadList = buildDownloadList(
+            finalDownloadList,
+            selectedQualityIndex,
+            isSequenceOrder
+          );
+          exportAria2Links(downloadList, albumName);
         });
       } else {
         progressDisplay.textContent = "URL解析失败，请重试";
