@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Fetch Data From Barchart
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Fetch and log options flow data from API
+// @version      2.1
+// @description  Fetch options flow data with pagination completeness auditing
 // @author       You
 // @match        https://www.barchart.com/*
 // @grant        GM_download
@@ -62,6 +62,14 @@ const OPTIONS_FLOW_FIELDS = [
   "symbolCode"
 ].join(",");
 
+const CRAWLER_CONFIG = {
+  rateLimitWaitMs: 120000,
+  maxRateLimitRetries: 5,
+  downloadAuditReport: true
+};
+
+const LOG_PREFIX = "[BarchartCrawler]";
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -90,6 +98,16 @@ function getFormattedDateInEST() {
   const estDate = new Intl.DateTimeFormat("en-US", options).format(today);
   const [month, day, year] = estDate.split("/");
   return `${year}-${month}-${day}`;
+}
+
+function logCrawler(level, event, details = {}) {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    event,
+    ...details
+  };
+  const logger = typeof console[level] === "function" ? console[level] : console.log;
+  logger.call(console, `${LOG_PREFIX} ${JSON.stringify(payload)}`);
 }
 
 function createHeaders(referer) {
@@ -139,13 +157,40 @@ function createOptionsFlowFetcher(sourceConfig) {
       redirect: "follow",
     };
 
+    const startedAt = performance.now();
+
     try {
       const response = await fetch(url, requestOptions);
-      if (response.status === 429) return { rateLimited: true };
-      return await response.json();
+      const http = {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        durationMs: Math.round(performance.now() - startedAt)
+      };
+
+      if (response.status === 429) {
+        return { rateLimited: true, http };
+      }
+
+      if (!response.ok) {
+        return { error: `HTTP ${response.status} ${response.statusText}`, http };
+      }
+
+      try {
+        return { payload: await response.json(), http };
+      } catch (error) {
+        return { error: `Invalid JSON response: ${error.message}`, http };
+      }
     } catch (error) {
-      console.error(`Error fetching ${sourceConfig.name} data:`, error);
-      return null;
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        http: {
+          status: null,
+          statusText: "FETCH_ERROR",
+          ok: false,
+          durationMs: Math.round(performance.now() - startedAt)
+        }
+      };
     }
   };
 }
@@ -157,41 +202,168 @@ function createOptionsFlowFetcher(sourceConfig) {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchWithRetry(fetchFn, page, label) {
-  while (true) {
+  let retryCount = 0;
+
+  while (retryCount <= CRAWLER_CONFIG.maxRateLimitRetries) {
     const result = await fetchFn(page);
     if (result && result.rateLimited) {
-      console.warn(`${label} page ${page}: 429 rate limited, waiting 2 min...`);
-      await sleep(120000);
+      retryCount++;
+      logCrawler("warn", "rate_limited", {
+        source: label,
+        page,
+        retryCount,
+        maxRetries: CRAWLER_CONFIG.maxRateLimitRetries,
+        waitMs: CRAWLER_CONFIG.rateLimitWaitMs
+      });
+
+      if (retryCount > CRAWLER_CONFIG.maxRateLimitRetries) {
+        return { result, retryCount, exhausted: true };
+      }
+
+      await sleep(CRAWLER_CONFIG.rateLimitWaitMs);
       continue;
     }
-    return result;
+    return { result, retryCount, exhausted: false };
   }
 }
 
 async function fetchAllPages(fetchFn, label) {
-  const result = await fetchWithRetry(fetchFn, 1, label);
+  const startedAt = performance.now();
+  const audit = {
+    source: label,
+    startedAt: new Date().toISOString(),
+    initialTotal: null,
+    finalObservedTotal: null,
+    pageSize: null,
+    expectedPages: null,
+    pages: [],
+    fetchedRecords: 0,
+    exportedRecords: 0,
+    missingRawRecords: 0,
+    exactDuplicateCandidates: 0,
+    warnings: [],
+    complete: false,
+    reasons: [],
+    limitation: "The API is live and has no snapshot token; count checks cannot prove that rows did not move between pages while fetching."
+  };
+  const optionData = [];
+  const firstAttempt = await fetchWithRetry(fetchFn, 1, label);
+  const firstResult = firstAttempt && firstAttempt.result;
+  const firstPayload = firstResult && firstResult.payload;
 
-  if (!result || !result.total || !Array.isArray(result.data)) {
-    console.error(`Invalid result from ${label} fetch`);
-    return [];
+  if (!firstPayload || !Number.isFinite(Number(firstPayload.total)) || !Array.isArray(firstPayload.data)) {
+    audit.reasons.push(firstResult && firstResult.error ? firstResult.error : "invalid_first_page");
+    audit.pages.push(createPageAudit(1, firstAttempt));
+    finalizeSourceAudit(audit, optionData, startedAt);
+    logCrawler("error", "source_incomplete", audit);
+    return { data: optionData, audit };
   }
 
-  console.log(`Expected total for ${label}: ${result.total}`);
+  audit.initialTotal = Number(firstPayload.total);
+  audit.finalObservedTotal = audit.initialTotal;
+  audit.pageSize = Number(firstPayload.count) > 0
+    ? Number(firstPayload.count)
+    : firstPayload.data.length;
 
-  const pages = Math.ceil(result.total / result.count);
-  const optionData = [...result.data];
+  if (audit.initialTotal > 0 && audit.pageSize <= 0) {
+    audit.reasons.push("invalid_page_size");
+    audit.pages.push(createPageAudit(1, firstAttempt));
+    finalizeSourceAudit(audit, optionData, startedAt);
+    logCrawler("error", "source_incomplete", audit);
+    return { data: optionData, audit };
+  }
 
-  for (let i = 2; i <= pages; i++) {
-    const nextResult = await fetchWithRetry(fetchFn, i, label);
-    if (nextResult && Array.isArray(nextResult.data)) {
-      optionData.push(...nextResult.data);
-    } else {
-      console.warn(`No data fetched for ${label} page ${i}`);
-      break;
+  audit.expectedPages = audit.initialTotal === 0 ? 1 : Math.ceil(audit.initialTotal / audit.pageSize);
+  logCrawler("info", "source_started", {
+    source: label,
+    expectedTotal: audit.initialTotal,
+    pageSize: audit.pageSize,
+    expectedPages: audit.expectedPages
+  });
+
+  for (let page = 1; page <= audit.expectedPages; page++) {
+    const attempt = page === 1 ? firstAttempt : await fetchWithRetry(fetchFn, page, label);
+    const result = attempt && attempt.result;
+    const payload = result && result.payload;
+    const pageAudit = createPageAudit(page, attempt);
+    audit.pages.push(pageAudit);
+
+    if (!payload || !Array.isArray(payload.data)) {
+      audit.reasons.push(`page_${page}_failed:${result && result.error ? result.error : "invalid_response"}`);
+      logCrawler("error", "page_failed", { source: label, ...pageAudit });
+      continue;
     }
+
+    const observedTotal = Number(payload.total);
+    if (Number.isFinite(observedTotal)) {
+      audit.finalObservedTotal = observedTotal;
+      if (observedTotal !== audit.initialTotal && !audit.reasons.includes("api_total_changed_during_fetch")) {
+        audit.reasons.push("api_total_changed_during_fetch");
+      }
+    }
+
+    const expectedOnPage = page < audit.expectedPages
+      ? audit.pageSize
+      : audit.initialTotal - (audit.pageSize * (audit.expectedPages - 1));
+    if (payload.data.length !== expectedOnPage) {
+      audit.reasons.push(`page_${page}_expected_${expectedOnPage}_received_${payload.data.length}`);
+    }
+
+    optionData.push(...payload.data);
+    logCrawler("info", "page_fetched", {
+      source: label,
+      ...pageAudit,
+      expectedRecords: expectedOnPage,
+      cumulativeRecords: optionData.length
+    });
   }
 
-  return optionData;
+  if (optionData.length !== audit.initialTotal) {
+    audit.reasons.push(`total_expected_${audit.initialTotal}_fetched_${optionData.length}`);
+  }
+
+  finalizeSourceAudit(audit, optionData, startedAt);
+  logCrawler(audit.complete ? "info" : "warn", "source_finished", audit);
+  return { data: optionData, audit };
+}
+
+function createPageAudit(page, attempt) {
+  const result = attempt && attempt.result;
+  const payload = result && result.payload;
+  return {
+    page,
+    httpStatus: result && result.http ? result.http.status : null,
+    durationMs: result && result.http ? result.http.durationMs : null,
+    retryCount: attempt ? attempt.retryCount : 0,
+    apiTotal: payload && Number.isFinite(Number(payload.total)) ? Number(payload.total) : null,
+    apiCount: payload && Number.isFinite(Number(payload.count)) ? Number(payload.count) : null,
+    receivedRecords: payload && Array.isArray(payload.data) ? payload.data.length : 0,
+    error: result && result.error ? result.error : null
+  };
+}
+
+function finalizeSourceAudit(audit, optionData, startedAt) {
+  audit.finishedAt = new Date().toISOString();
+  audit.durationMs = Math.round(performance.now() - startedAt);
+  audit.fetchedRecords = optionData.length;
+  audit.missingRawRecords = optionData.filter(record => !record || !record.raw).length;
+  audit.exportedRecords = optionData.length - audit.missingRawRecords;
+
+  const fingerprints = optionData
+    .filter(record => record && record.raw)
+    .map(record => JSON.stringify(record.raw));
+  audit.exactDuplicateCandidates = fingerprints.length - new Set(fingerprints).size;
+
+  if (audit.missingRawRecords > 0) {
+    audit.reasons.push(`missing_raw_records_${audit.missingRawRecords}`);
+  }
+  if (audit.exactDuplicateCandidates > 0) {
+    audit.warnings.push(
+      `found_${audit.exactDuplicateCandidates}_exact_duplicate_candidates; these may be valid identical trades or pagination overlap`
+    );
+  }
+  audit.reasons = [...new Set(audit.reasons)];
+  audit.complete = audit.reasons.length === 0;
 }
 
 function downloadJSON(jsonFile, fileName) {
@@ -209,15 +381,22 @@ function downloadJSON(jsonFile, fileName) {
 }
 
 async function downloadOptionsFlowData(sourceKeys = Object.keys(OPTIONS_FLOW_SOURCES)) {
+  const runId = `${getFormattedDateInEST()}_${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  logCrawler("info", "run_started", { runId, sources: sourceKeys });
+
   // Create fetchers for each source
   const fetchPromises = sourceKeys.map(key => {
     const config = OPTIONS_FLOW_SOURCES[key];
     if (!config) {
-      console.warn(`Unknown source: ${key}`);
-      return Promise.resolve({ key, data: [] });
+      logCrawler("warn", "unknown_source", { runId, source: key });
+      return Promise.resolve({
+        key,
+        data: [],
+        audit: { source: key, complete: false, reasons: ["unknown_source"] }
+      });
     }
     const fetcher = createOptionsFlowFetcher(config);
-    return fetchAllPages(fetcher, config.name).then(data => ({ key, data }));
+    return fetchAllPages(fetcher, config.name).then(result => ({ key, ...result }));
   });
 
   // Fetch all sources in parallel
@@ -228,17 +407,35 @@ async function downloadOptionsFlowData(sourceKeys = Object.keys(OPTIONS_FLOW_SOU
   for (const { key, data } of results) {
     if (data.length > 0) {
       const config = OPTIONS_FLOW_SOURCES[key];
-      const rawData = data.map(obj => obj.raw);
+      const rawData = data.filter(obj => obj && obj.raw).map(obj => obj.raw);
       allData.push(...rawData);
-      console.log(`Fetched ${data.length} records for ${config.name}`);
+      logCrawler("info", "source_export_ready", {
+        runId,
+        source: config.name,
+        fetchedRecords: data.length,
+        exportedRecords: rawData.length
+      });
     }
   }
+
+  const auditReport = {
+    runId,
+    generatedAt: new Date().toISOString(),
+    complete: results.every(result => result.audit && result.audit.complete),
+    totalExportedRecords: allData.length,
+    sources: results.map(result => result.audit)
+  };
+  window.__barchartCrawlerLastAudit = auditReport;
 
   // Download combined data as a single file
   if (allData.length > 0) {
     downloadJSON(allData, `OF_${getFormattedDateInEST()}.json`);
-    console.log(`Downloaded ${allData.length} total records`);
   }
+  if (CRAWLER_CONFIG.downloadAuditReport) {
+    downloadJSON(auditReport, `OF_Audit_${runId}.json`);
+  }
+
+  logCrawler(auditReport.complete ? "info" : "warn", "run_finished", auditReport);
 }
 
 // ============================================================================
@@ -263,8 +460,20 @@ function createStyledButton(text, rightOffset) {
 
 // Create button to download all options flow data
 const ofButton = createStyledButton("OF All", 180);
-ofButton.addEventListener("click", () => {
-  downloadOptionsFlowData(); // Downloads stock, etf, and indices
+ofButton.addEventListener("click", async () => {
+  ofButton.disabled = true;
+  ofButton.textContent = "OF Fetching...";
+
+  try {
+    await downloadOptionsFlowData(); // Downloads stock, etf, and indices
+  } catch (error) {
+    logCrawler("error", "run_crashed", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  } finally {
+    ofButton.disabled = false;
+    ofButton.textContent = "OF All";
+  }
 });
 
 document.body.appendChild(ofButton);
