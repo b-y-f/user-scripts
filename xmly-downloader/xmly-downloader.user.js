@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.7
+// @version         1.3.9
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
@@ -9,26 +9,33 @@
 // @connect         *
 // @icon            https://www.ximalaya.com/favicon.ico
 // @require         https://registry.npmmirror.com/crypto-js/4.1.1/files/crypto-js.js
+// @run-at          document-idle
 // @license         MIT
 // @namespace https://greasyfork.org/users/323093
 // ==/UserScript==
 
-async function fetchUntilSuccess(url) {
-  while (true) {
+const UI_HOST_ID = "xmly-downloader-host";
+const TRACKS_PER_PAGE = 30;
+
+const sleep = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function fetchJson(url, maxAttempts = 5) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        return data;
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
       }
-      console.error(
-        `Failed to fetch: ${response.status} ${response.statusText}`
-      );
+      return await response.json();
     } catch (error) {
-      console.error(`Fetch error: ${error.message}`);
+      lastError = error;
+      console.warn(`请求失败 (${attempt}/${maxAttempts}):`, url, error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (attempt < maxAttempts) await sleep(Math.min(attempt * 1000, 3000));
   }
+  throw new Error(`请求多次失败: ${lastError?.message || url}`);
 }
 
 function extractTrackUrl(tracks) {
@@ -51,7 +58,7 @@ async function getAllTrackIds() {
   async function getAlbumInfo() {
     const albumId = getAlbumId();
     const apiUrl = `https://www.ximalaya.com/tdk-web/seo/search/albumInfo?albumId=${albumId}`;
-    const data = await fetchUntilSuccess(apiUrl);
+    const data = await fetchJson(apiUrl);
     const albumData = data.data || {};
     return {
       albumName:
@@ -65,38 +72,59 @@ async function getAllTrackIds() {
     };
   }
 
-  async function fetchTracks(pages) {
-    let tracks = [];
-
-    for (let index = 0; index < pages; index++) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      document.querySelectorAll(".sound-list li").forEach((li) => {
-        if (li.classList.contains("_nO")) {
-          // Assuming the child anchor tag holds the title and URL
-          const anchor = li.querySelector("a");
-          if (anchor) {
-            const title = anchor.getAttribute("title");
-            const trackId = anchor.getAttribute("href").split("/").pop();
-            tracks.push({ title, trackId });
-          } else {
-            console.log("No anchor tag found in li with class '_nO'");
-          }
-        }
+  function tracksOnCurrentPage() {
+    const result = new Map();
+    document
+      .querySelectorAll('.sound-list a[href*="/sound/"], .sound-list li a[href]')
+      .forEach((anchor) => {
+        const href = anchor.getAttribute("href") || "";
+        const match = href.match(/\/(?:sound\/)?(\d+)(?:[/?#]|$)/);
+        if (!match) return;
+        const title =
+          anchor.getAttribute("title") || anchor.textContent?.trim() || match[1];
+        result.set(match[1], { title, trackId: match[1] });
       });
-      // Only execute part2 for the first n-1 iterations
-      if (index < pages - 1) {
-        const nextPageButton = document.querySelector(
-          "li.page-next a.page-link"
-        );
-        nextPageButton.click();
-      }
-    }
+    return [...result.values()];
+  }
 
-    return tracks;
+  async function fetchTracks(pages) {
+    const tracks = new Map();
+    for (let index = 0; index < pages; index++) {
+      let current = [];
+      for (let wait = 0; wait < 20 && current.length === 0; wait++) {
+        current = tracksOnCurrentPage();
+        if (current.length === 0) await sleep(250);
+      }
+      if (current.length === 0) throw new Error("页面中没有找到声音列表");
+      current.forEach((track) => tracks.set(track.trackId, track));
+
+      if (index >= pages - 1) break;
+      const before = current.map((track) => track.trackId).join(",");
+      const nextPageButton = document.querySelector(
+        "li.page-next:not(.disabled) a.page-link, li.page-next:not(.disabled) button, a.page-link[rel='next']"
+      );
+      if (!nextPageButton) {
+        throw new Error(`只解析到第 ${index + 1} 页，找不到下一页按钮`);
+      }
+      nextPageButton.click();
+      let changed = false;
+      for (let wait = 0; wait < 40; wait++) {
+        await sleep(250);
+        const after = tracksOnCurrentPage()
+          .map((track) => track.trackId)
+          .join(",");
+        if (after && after !== before) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) throw new Error(`第 ${index + 2} 页加载超时`);
+    }
+    return [...tracks.values()];
   }
 
   const albumInfo = await getAlbumInfo();
-  const pages = Math.ceil(albumInfo.trackCount / 30);
+  const pages = Math.ceil(albumInfo.trackCount / TRACKS_PER_PAGE);
   const tracks = await fetchTracks(pages);
   console.log("raw tracks", tracks);
   return {
@@ -120,13 +148,16 @@ function decrypt(t) {
 
 async function fetchAudioUrl(apiUrl) {
   try {
-    const data = await fetchUntilSuccess(apiUrl);
+    const data = await fetchJson(apiUrl);
     if (data.ret === 1001) {
       throw new Error(
         "Rate limited!!! Wait for a while then download again..."
       );
     }
-    const audioQualities = data.trackInfo.playUrlList;
+    const audioQualities = data.trackInfo?.playUrlList;
+    if (!Array.isArray(audioQualities) || audioQualities.length === 0) {
+      throw new Error("接口没有返回可下载音质，可能需要登录或该声音不可下载");
+    }
     return audioQualities;
   } catch (error) {
     console.error("Error fetching the URL:", error);
@@ -298,31 +329,39 @@ function exportAria2Links(downloadList, albumName) {
 }
 
 function initializeUI() {
+  if (document.getElementById(UI_HOST_ID)) return;
+
+  // Keep Ximalaya's (and browser extensions') page CSS from hiding the controls.
+  const uiHost = document.createElement("div");
+  uiHost.id = UI_HOST_ID;
+  uiHost.style.cssText =
+    "all: initial; position: fixed; right: 0; bottom: 0; z-index: 2147483647;";
+  document.body.appendChild(uiHost);
+  const uiRoot = uiHost.attachShadow
+    ? uiHost.attachShadow({ mode: "open" })
+    : uiHost;
+
   const progressDisplay = document.createElement("div");
-  progressDisplay.style.position = "fixed";
-  progressDisplay.style.bottom = "50px";
-  progressDisplay.style.right = "10px";
-  progressDisplay.style.zIndex = 1000;
-  progressDisplay.style.backgroundColor = "white";
-  progressDisplay.style.padding = "10px";
-  progressDisplay.style.border = "1px solid black";
-  progressDisplay.style.display = "none"; // Initially hidden
-  document.body.appendChild(progressDisplay);
+  progressDisplay.style.cssText =
+    "all: initial; position: fixed; right: 10px; bottom: 50px; " +
+    "box-sizing: border-box; display: none; padding: 10px; border: 1px solid #000; " +
+    "background: #fff; color: #000; font: 14px/1.4 sans-serif;";
+  uiRoot.appendChild(progressDisplay);
 
   // Create a container div
   const container = document.createElement("div");
-  container.style.position = "fixed";
-  container.style.bottom = "10px";
-  container.style.right = "10px";
-  container.style.zIndex = 1000;
-  container.style.display = "flex";
-  container.style.alignItems = "center";
-  container.style.backgroundColor = "white";
-  container.style.padding = "5px";
-  document.body.appendChild(container);
+  container.style.cssText =
+    "all: initial; position: fixed; right: 10px; bottom: 10px; " +
+    "box-sizing: border-box; display: flex; align-items: center; padding: 5px; " +
+    "background: #fff; color: #000; font: 14px/1.4 sans-serif;";
+  uiRoot.appendChild(container);
 
   const button = document.createElement("button");
   button.textContent = "解析ID";
+  button.style.cssText =
+    "all: revert; display: inline-block; box-sizing: border-box; padding: 2px 8px; " +
+    "border: 1px solid #767676; border-radius: 2px; background: #efefef; " +
+    "color: #000; font: 14px/1.4 sans-serif; cursor: pointer;";
   container.appendChild(button);
 
   button.addEventListener("click", async function parseIds() {
@@ -448,4 +487,8 @@ function initializeUI() {
   });
 }
 
-initializeUI();
+if (document.body) {
+  initializeUI();
+} else {
+  window.addEventListener("DOMContentLoaded", initializeUI, { once: true });
+}
