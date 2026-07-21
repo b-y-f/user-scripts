@@ -254,11 +254,11 @@ function initializeUI() {
         qualitySelect.addEventListener("change", (e) => {
           selectedQualityIndex = parseInt(e.target.value);
         });
-        button.textContent = "下载";
+        button.textContent = "直接下载";
         button.style.marginRight = "5px";
 
         const exportButton = document.createElement("button");
-        exportButton.textContent = "导出";
+        exportButton.textContent = "导出aria2链接";
         exportButton.style.marginRight = "30px";
         container.insertBefore(exportButton, button.nextSibling);
 
