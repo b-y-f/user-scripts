@@ -145,8 +145,8 @@ function createOptionsFlowFetcher(sourceConfig) {
       `in(symbolType,(Call,Put))=&` +
       `in(expirationType,(Monthly,Weekly))=&` +
       `page=${page}&` +
-      `gt(tradeSize,10)=&` +
-      `gt(premium,50000)=&` +
+      `gt(tradeSize,50)=&` +
+      `gt(premium,10000)=&` +
       `meta=field.shortName,field.type,field.description&` +
       `raw=1`;
 
