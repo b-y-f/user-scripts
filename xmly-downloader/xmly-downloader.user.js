@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name            喜马拉雅专辑下载器
-// @version         1.3.6
+// @version         1.3.7
 // @description     XMLY Downloader
 // @author          B-Y-F
 // @match           *://www.ximalaya.com/*
 // @grant           GM_download
+// @grant           GM_xmlhttpRequest
+// @connect         *
 // @icon            https://www.ximalaya.com/favicon.ico
 // @require         https://registry.npmmirror.com/crypto-js/4.1.1/files/crypto-js.js
 // @license         MIT
@@ -136,23 +138,146 @@ function sanitizeFileName(fileName) {
   return String(fileName || "").replace(/[\\/:*?"<>|\r\n]+/g, "_").trim();
 }
 
-function buildDownloadList(
+function extensionFromContentType(contentType) {
+  const mime = String(contentType || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  const extensions = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mp4": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aac": "aac",
+    "audio/aacp": "aac",
+    "audio/flac": "flac",
+    "audio/ogg": "ogg",
+    "audio/opus": "opus",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+  };
+  return extensions[mime] || null;
+}
+
+function extensionFromUrl(url) {
+  try {
+    const match = new URL(url).pathname.match(
+      /\.([a-z0-9]{2,5})$/i
+    );
+    const extension = match && match[1].toLowerCase();
+    return ["mp3", "m4a", "mp4", "aac", "flac", "ogg", "opus", "wav"].includes(
+      extension
+    )
+      ? extension === "mp4"
+        ? "m4a"
+        : extension
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function sniffAudioExtension(buffer) {
+  const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+  const text = (...indexes) =>
+    indexes.map((index) => String.fromCharCode(bytes[index] || 0)).join("");
+
+  if (text(0, 1, 2) === "ID3") return "mp3";
+  if (bytes.length >= 2 && bytes[0] === 0xff) {
+    // ADTS uses layer bits 00; MPEG audio (including MP3) does not.
+    if ((bytes[1] & 0xf6) === 0xf0) return "aac";
+    if ((bytes[1] & 0xe0) === 0xe0) return "mp3";
+  }
+  if (text(4, 5, 6, 7) === "ftyp") return "m4a";
+  if (text(0, 1, 2, 3) === "fLaC") return "flac";
+  if (text(0, 1, 2, 3) === "OggS") return "ogg";
+  if (text(0, 1, 2, 3) === "RIFF" && text(8, 9, 10, 11) === "WAVE") {
+    return "wav";
+  }
+  return null;
+}
+
+function getResponseHeader(responseHeaders, name) {
+  const match = String(responseHeaders || "").match(
+    new RegExp(`^${name}:\\s*(.+)$`, "im")
+  );
+  return match ? match[1].trim() : "";
+}
+
+function detectAudioExtension(url, declaredType) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let responseHint = null;
+    const fallback = () => {
+      const declaredExtension = String(declaredType || "")
+        .split("_", 1)[0]
+        .toLowerCase();
+      resolve(responseHint || extensionFromUrl(url) || declaredExtension || "mp3");
+    };
+
+    const request = GM_xmlhttpRequest({
+      method: "GET",
+      url,
+      headers: { Range: "bytes=0-31" },
+      responseType: "arraybuffer",
+      timeout: 10000,
+      onreadystatechange(response) {
+        if (settled || response.readyState !== 2) return;
+        responseHint = extensionFromContentType(
+          getResponseHeader(response.responseHeaders, "content-type")
+        );
+        // Do not accidentally fetch an entire audio file if the CDN ignores Range.
+        if (response.status !== 206) {
+          settled = true;
+          request.abort();
+          fallback();
+        }
+      },
+      onload(response) {
+        if (settled) return;
+        settled = true;
+        resolve(
+          sniffAudioExtension(response.response) ||
+            extensionFromContentType(
+              getResponseHeader(response.responseHeaders, "content-type")
+            ) ||
+            extensionFromUrl(response.finalUrl || url) ||
+            String(declaredType || "").split("_", 1)[0].toLowerCase() ||
+            "mp3"
+        );
+      },
+      onerror() {
+        if (settled) return;
+        settled = true;
+        fallback();
+      },
+      ontimeout() {
+        if (settled) return;
+        settled = true;
+        fallback();
+      },
+    });
+  });
+}
+
+async function buildDownloadList(
   finalDownloadList,
   selectedQualityIndex,
   isSequenceOrder
 ) {
-  return finalDownloadList.map((item, index) => {
+  return Promise.all(finalDownloadList.map(async (item, index) => {
     const selectedQuality =
       item.audioQualities[selectedQualityIndex] || item.audioQualities[0];
-    const fileType = selectedQuality.type.split("_")[0];
+    const trueUrl = decrypt(selectedQuality.url);
+    const fileType = await detectAudioExtension(trueUrl, selectedQuality.type);
     const fileName = sanitizeFileName(`${item.title}.${fileType}`);
 
     return {
       ...item,
-      trueUrl: decrypt(selectedQuality.url),
+      trueUrl,
       fileName: isSequenceOrder ? `${index}.${fileName}` : fileName,
     };
-  });
+  }));
 }
 
 function exportAria2Links(downloadList, albumName) {
@@ -277,14 +402,15 @@ function initializeUI() {
         });
 
         button.removeEventListener("click", parseUrls);
-        button.addEventListener("click", function downloadFiles() {
+        button.addEventListener("click", async function downloadFiles() {
           let count = 0;
-          progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
-          const downloadList = buildDownloadList(
+          progressDisplay.textContent = "正在识别真实音频格式...";
+          const downloadList = await buildDownloadList(
             finalDownloadList,
             selectedQualityIndex,
             isSequenceOrder
           );
+          progressDisplay.textContent = `下载进程： ${count} / ${tracks.length}`;
           console.log("After decrypt url\n", downloadList);
           downloadList.forEach((item) => {
             GM_download({
@@ -305,13 +431,15 @@ function initializeUI() {
           });
         });
 
-        exportButton.addEventListener("click", function exportLinks() {
-          const downloadList = buildDownloadList(
+        exportButton.addEventListener("click", async function exportLinks() {
+          progressDisplay.textContent = "正在识别真实音频格式...";
+          const downloadList = await buildDownloadList(
             finalDownloadList,
             selectedQualityIndex,
             isSequenceOrder
           );
           exportAria2Links(downloadList, albumName);
+          progressDisplay.textContent = "aria2 链接已导出";
         });
       } else {
         progressDisplay.textContent = "URL解析失败，请重试";
