@@ -64,8 +64,7 @@ const OPTIONS_FLOW_FIELDS = [
 
 const CRAWLER_CONFIG = {
   rateLimitWaitMs: 120000,
-  maxRateLimitRetries: 5,
-  downloadAuditReport: true
+  maxRateLimitRetries: 5
 };
 
 const LOG_PREFIX = "[BarchartCrawler]";
@@ -430,9 +429,6 @@ async function downloadOptionsFlowData(sourceKeys = Object.keys(OPTIONS_FLOW_SOU
   // Download combined data as a single file
   if (allData.length > 0) {
     downloadJSON(allData, `OF_${getFormattedDateInEST()}.json`);
-  }
-  if (CRAWLER_CONFIG.downloadAuditReport) {
-    downloadJSON(auditReport, `OF_Audit_${runId}.json`);
   }
 
   logCrawler(auditReport.complete ? "info" : "warn", "run_finished", auditReport);
